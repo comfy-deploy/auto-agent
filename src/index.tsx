@@ -1,6 +1,6 @@
 import { serve, spawn } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools } from 'ai';
 import { z } from "zod";
 
 import Exa from 'exa-js';
@@ -16,24 +16,24 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
   'fal-ai/flux-pro': 100, // Highest quality, slower
   'fal-ai/flux-realism': 92,
   'fal-ai/flux-kontext': 96, // Excellent at following complex prompts and context
-  
+
   // Other strong image models
   'fal-ai/stable-diffusion-v3-medium': 85,
   'fal-ai/sdxl': 80,
   'fal-ai/recraft-v3': 88,
-  
+
   // Video generation
   'fal-ai/runway-gen3/turbo/image-to-video': 90,
   'fal-ai/luma-dream-machine': 85,
   'fal-ai/kling-video/v1/standard/image-to-video': 80,
-  
+
   // Upscaling
   'fal-ai/clarity-upscaler': 92,
   'fal-ai/real-esrgan': 85,
-  
+
   // Audio
   'fal-ai/stable-audio': 88,
-  
+
   // 3D
   'fal-ai/triposr': 85,
 };
@@ -52,7 +52,7 @@ const CATEGORY_PREFERENCES = {
 // Helper function to use LLM for intelligent model selection
 async function selectBestModelWithLLM(userQuery: string, candidateModels: any[], hasImageInput: boolean): Promise<any[]> {
   try {
-    const modelDescriptions = candidateModels.map(model => 
+    const modelDescriptions = candidateModels.map(model =>
       `${model.id}: ${model.title} - ${model.description} (Category: ${model.category}, Quality Score: ${model.qualityScore}${model.requiresImage ? ', Requires Image Input' : ''})`
     ).join('\n');
 
@@ -72,12 +72,12 @@ For image generation:
 - Choose flux/schnell for speed, flux/dev for balance, flux-pro for maximum quality
 - Use flux-kontext for complex prompts with detailed descriptions and context
 - Consider recraft-v3 for artistic/design work`,
-      
+
       schema: z.object({
         selectedModels: z.array(z.string()).max(3).describe("Array of model IDs in order of preference"),
         reasoning: z.string().optional().describe("Brief explanation of the selection")
       }),
-      
+
       messages: [
         {
           role: "user",
@@ -93,9 +93,9 @@ Select the best 3 models for this request, prioritizing quality and relevance. $
     });
 
     console.log(`🤖 LLM Selection Reasoning: ${object.reasoning}`);
-    
+
     // Return models in the LLM's preferred order
-    return object.selectedModels.map((id: string) => 
+    return object.selectedModels.map((id: string) =>
       candidateModels.find(model => model.id === id)
     ).filter(Boolean);
 
@@ -136,9 +136,9 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
 
     // Detect if user has provided an image or is referencing an existing image
     const hasImageInput = /\b(image_url|img|jpg|png|jpeg|gif|bmp|webp|upload|attach|from.*image|edit.*image|modify.*image|change.*image)\b/i.test(userQuery) ||
-                         /https?:\/\/.*\.(jpg|jpeg|png|gif|bmp|webp)/i.test(userQuery) ||
-                         /\b(this image|the image|my image|uploaded image|attached image|given image|provided image|base64)\b/i.test(userQuery) ||
-                         /\b(using.*image|with.*image|take.*image|from.*photo)\b/i.test(userQuery);
+      /https?:\/\/.*\.(jpg|jpeg|png|gif|bmp|webp)/i.test(userQuery) ||
+      /\b(this image|the image|my image|uploaded image|attached image|given image|provided image|base64)\b/i.test(userQuery) ||
+      /\b(using.*image|with.*image|take.*image|from.*photo)\b/i.test(userQuery);
 
     // Detect quality/speed preferences
     const wantsHighQuality = /\b(best|highest|premium|quality|professional|detailed)\b/i.test(userQuery);
@@ -207,21 +207,21 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
       if (!model.deprecated) score += 5;
 
       // Filter out image-to-image models when no image is provided
-      const isImageToImageModel = model.category === 'image-to-image' || 
-                                  modelId.includes('image-to-image') ||
-                                  modelId.includes('img2img') ||
-                                  modelId.includes('upscaler') ||
-                                  modelId.includes('upscaling') ||
-                                  modelId.includes('super-resolution') ||
-                                  /\b(edit|modify|enhance|restore|colorize|inpaint|outpaint)\b/i.test(model.title);
+      const isImageToImageModel = model.category === 'image-to-image' ||
+        modelId.includes('image-to-image') ||
+        modelId.includes('img2img') ||
+        modelId.includes('upscaler') ||
+        modelId.includes('upscaling') ||
+        modelId.includes('super-resolution') ||
+        /\b(edit|modify|enhance|restore|colorize|inpaint|outpaint)\b/i.test(model.title);
 
       // Heavily penalize image-to-image models when no image is provided
       if (isImageToImageModel && !hasImageInput) {
         score -= 1000; // Effectively remove from consideration
       }
 
-      return { 
-        ...model, 
+      return {
+        ...model,
         relevanceScore: score,
         qualityScore: qualityScore,
         requiresImage: isImageToImageModel
@@ -230,7 +230,7 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
 
     // Initial filtering and sorting
     const filteredModels = scoredModels
-      .filter((model: any) => 
+      .filter((model: any) =>
         model.relevanceScore > 5 || // Keep models with decent relevance
         detectedCategories.includes(model.category) || // Or matching category
         MODEL_QUALITY_SCORES[model.id] >= 80 // Or high-quality models
@@ -240,21 +240,21 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
 
     // Use LLM to intelligently select the best models
     const selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput);
-    
+
     // Take the requested number of results
     const finalModels = selectedModels.slice(0, maxResults);
 
     // Check if user is asking for image editing but hasn't provided an image
-    const isAskingForImageEditing = /\b(edit|modify|enhance|upscale|improve|fix|restore|colorize|remove|add.*to|change.*in)\b/i.test(userQuery) && 
-                                   /\b(image|photo|picture|pic)\b/i.test(userQuery);
-    
+    const isAskingForImageEditing = /\b(edit|modify|enhance|upscale|improve|fix|restore|colorize|remove|add.*to|change.*in)\b/i.test(userQuery) &&
+      /\b(image|photo|picture|pic)\b/i.test(userQuery);
+
     if (isAskingForImageEditing && !hasImageInput && finalModels.length === 0) {
       console.log(`⚠️  User seems to be asking for image editing but hasn't provided an image`);
     }
 
     console.log(`🎯 Selected ${finalModels.length} models for query: "${userQuery}"`);
     console.log(`📸 User has image input: ${hasImageInput}`);
-    
+
     finalModels.forEach((model, i) => {
       console.log(`${i + 1}. ${model.id} (Quality: ${model.qualityScore}, Score: ${model.relevanceScore.toFixed(1)}${model.requiresImage ? ', Requires Image' : ''})`);
     });
@@ -512,7 +512,7 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
     // Resolve all $ref references in the schema
     const resolvedSchema = resolveSchemaRefs(inputSchema, openApiSpec.components);
 
-    console.log(`Resolved schema for ${modelInfo.id}:`, JSON.stringify(resolvedSchema, null, 2));
+    // console.log(`Resolved schema for ${modelInfo.id}:`, JSON.stringify(resolvedSchema, null, 2));
 
     // Convert the resolved schema to Zod
     const zodSchema = jsonSchemaToZod(resolvedSchema);
@@ -528,26 +528,45 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
         console.log(`🚀 Executing tool: ${toolName}`);
         console.log(`📋 Model ID: ${modelInfo.id}`);
         console.log(`📝 Parameters:`, JSON.stringify(parameters, null, 2));
-        console.log(`🏷️  Category: ${modelInfo.category}`);
-        console.log(`💰 Pricing: ${modelInfo.pricing || 'Not specified'}`);
-        console.log(`🔗 Endpoint: ${openApiSpec.servers?.[0]?.url || "https://queue.fal.run"}`);
+        // console.log(`🏷️  Category: ${modelInfo.category}`);
+        // console.log(`💰 Pricing: ${modelInfo.pricing || 'Not specified'}`);
+        // console.log(`🔗 Endpoint: ${openApiSpec.servers?.[0]?.url || "https://queue.fal.run"}`);
 
-        console.log(parameters);
+        // console.log(parameters);
 
-        const result = await fal.subscribe(modelInfo.id, {
-          input: parameters,
-          logs: true,
-          onQueueUpdate: (update) => {
-            if (update.status === "IN_PROGRESS") {
-              update.logs.map((log) => log.message).forEach(console.log);
-            }
-          },
-        });
+        // modelInfo.id
+        try {
+          const result = await fal.subscribe(modelInfo.id, {
+            input: parameters,
+            logs: true,
+            onQueueUpdate: (update) => {
+              if (update.status === "IN_PROGRESS") {
+                // update.logs.map((log) => log.message).forEach(console.log);
+              }
+            },
+          });
 
-        console.log(result.data);
 
-        // Return a dummy success message
-        return result.data.images;
+          const images = result.data?.images?.map((image: any) => ({
+            type: "image",
+            width: image.width,
+            height: image.height,
+            url: image.url
+          }))
+
+          const video = result.data?.video ? [{
+            type: "video",
+            url: result.data.video,
+          }] : null;
+
+          console.log("images || video", images || video);
+
+          // Return array of images with just width and height info
+          return images || video;
+        } catch (error) {
+          console.error(error);
+          return "Error calling tool";
+        }
       }
     };
 
@@ -594,7 +613,7 @@ export const webSearch = tool({
       livecrawl: 'always',
       numResults: 3,
     });
-    console.log("Results:", results);
+    // console.log("Results:", results);
     return results.map(result => ({
       title: result.title,
       url: result.url,
@@ -604,29 +623,29 @@ export const webSearch = tool({
   },
 });
 
-export const falTools = tool({
+export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) => tool({
   description: "Use a fal.ai model to create an image or video, 3d models, or even more, based on the user's prompt",
   inputSchema: z.object({
     prompt: z.string(),
   }),
-  execute: async ({ prompt }) => {
+  execute: async ({ prompt }, { toolCallId }) => {
     console.log("Searching fal.ai models for:", prompt);
     const tools = await createVercelToolsFromModels(await searchFalModels(prompt, 5));
 
-    const { content } = await generateText({
+    const stream = await streamText({
       model: "anthropic/claude-4-sonnet",
       system: `You are a creative agent. The agent has decided to use the following tools to create the user's prompt. Some tools might require image_url, make sure to only use those when you have existing images`,
       prompt: prompt,
       tools,
     })
 
-    console.log(content);
+    writer.merge(stream.toUIMessageStream());
 
-    return content;
+    return "Fal call completed";
   }
 });
 
-function createAIStream(messages: any[]) {
+function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   return streamText({
     model: "anthropic/claude-4-sonnet",
     system: `You are a creative agent.
@@ -643,7 +662,7 @@ function createAIStream(messages: any[]) {
     stopWhen: stepCountIs(10),
     tools: {
       webSearch,
-      falTools,
+      falTools: falTools(writer),
     },
   });
 
@@ -672,11 +691,11 @@ const server = serve({
             );
           }
 
-          console.log(messages);
+          // console.log(messages);
 
           const stream = createUIMessageStream({
             execute: ({ writer }) => {
-              writer.merge(createAIStream(messages).toUIMessageStream())
+              writer.merge(createAIStream(messages, writer).toUIMessageStream())
             }
           })
 

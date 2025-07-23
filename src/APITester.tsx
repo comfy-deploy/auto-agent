@@ -78,7 +78,6 @@ export function APITester() {
 
   console.log(messages);
   
-
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Messages Container */}
@@ -179,20 +178,58 @@ export function APITester() {
                             {!isCollapsed && (part as any).output && isCompleted && (
                               <div className="text-xs text-gray-600">
                                 {Array.isArray((part as any).output) ? (
-                                  <div>
-                                    <strong>Found {(part as any).output.length} results</strong>
-                                    {(part as any).output.slice(0, 2).map((result: any, i: number) => (
-                                      <div key={i} className="mt-1 p-1 bg-white rounded border">
-                                        <div className="font-medium text-gray-800">{result.title}</div>
-                                        <div className="text-gray-500 truncate">{result.content?.substring(0, 100)}...</div>
+                                  // Check if this is an array of media items (images/videos)
+                                  (part as any).output.length > 0 && ((part as any).output[0].type === "image" || (part as any).output[0].type === "video") ? (
+                                    <div>
+                                      <strong>Generated {(part as any).output.length} media item{(part as any).output.length > 1 ? 's' : ''}</strong>
+                                      <div className="mt-2 grid grid-cols-1 gap-2">
+                                        {(part as any).output.map((item: any, i: number) => (
+                                          <div key={i} className="bg-white rounded border p-2">
+                                            {item.type === "image" ? (
+                                              <div>
+                                                <div className="font-medium text-gray-800 mb-1">🖼️ Image {i + 1}</div>
+                                                <img 
+                                                  src={item.url} 
+                                                  alt={`Generated image ${i + 1}`}
+                                                  className="max-w-full h-auto rounded border max-h-48 object-contain"
+                                                  style={{ maxWidth: '300px' }}
+                                                />
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                  {item.width} × {item.height}
+                                                </div>
+                                              </div>
+                                            ) : item.type === "video" ? (
+                                              <div>
+                                                <div className="font-medium text-gray-800 mb-1">🎥 Video {i + 1}</div>
+                                                <video 
+                                                  src={item.url} 
+                                                  controls
+                                                  className="max-w-full h-auto rounded border max-h-48"
+                                                  style={{ maxWidth: '300px' }}
+                                                />
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        ))}
                                       </div>
-                                    ))}
-                                    {(part as any).output.length > 2 && (
-                                      <div className="text-center mt-1 text-gray-500">
-                                        and {(part as any).output.length - 2} more results...
-                                      </div>
-                                    )}
-                                  </div>
+                                    </div>
+                                  ) : (
+                                    // Default handling for other arrays (like search results)
+                                    <div>
+                                      <strong>Found {(part as any).output.length} results</strong>
+                                      {(part as any).output.slice(0, 2).map((result: any, i: number) => (
+                                        <div key={i} className="mt-1 p-1 bg-white rounded border">
+                                          <div className="font-medium text-gray-800">{result.title}</div>
+                                          <div className="text-gray-500 truncate">{result.content?.substring(0, 100)}...</div>
+                                        </div>
+                                      ))}
+                                      {(part as any).output.length > 2 && (
+                                        <div className="text-center mt-1 text-gray-500">
+                                          and {(part as any).output.length - 2} more results...
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
                                 ) : (
                                   <div><strong>Output:</strong> {JSON.stringify((part as any).output).substring(0, 200)}...</div>
                                 )}
