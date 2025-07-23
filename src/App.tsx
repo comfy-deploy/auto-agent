@@ -7,7 +7,7 @@ import reactLogo from "./react.svg";
 
 export function App() {
   return (
-    <div className="container mx-auto p-8 text-center relative z-10 w-screen">
+    <div className="text-center relative z-10 w-screen h-screen">
       <APITester />
     </div>
   );
