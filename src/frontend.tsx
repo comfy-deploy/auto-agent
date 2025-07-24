@@ -8,11 +8,19 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
 import { App } from "./App";
+import { NuqsAdapter } from 'nuqs/adapters/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient();
 
 const elem = document.getElementById("root")!;
 const app = (
   <StrictMode>
-    <App />
+    <NuqsAdapter>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </NuqsAdapter>
   </StrictMode>
 );
 

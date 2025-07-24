@@ -1,187 +1,29 @@
-import { serve, spawn } from "bun";
+import { RedisClient, serve, spawn } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject } from 'ai';
 import { z } from "zod";
+import { RedisMemoryServer } from 'redis-memory-server';
+
+// Initialize Redis asynchronously
+let redis: RedisClient;
+
+async function initializeRedis() {
+  const redisServer = new RedisMemoryServer();
+  const host = await redisServer.getHost();
+  const port = await redisServer.getPort();
+  console.log(`🔴 Redis server started at ${host}:${port}`);
+
+  redis = new RedisClient("redis://" + host + ":" + port);
+  console.log(`🗄️  Redis initialized successfully`);
+}
 
 import Exa from 'exa-js';
 import { fal } from "@fal-ai/client";
 
 export const exa = new Exa(process.env.EXA_API_KEY);
 
-// Simple in-memory cache with TTL
-class InMemoryCache {
-  private cache: Map<string, { data: any; expiry: number }> = new Map();
-  protected defaultTTL: number;
-
-  constructor(defaultTTL: number = 5 * 60 * 1000) { // 5 minutes default
-    this.defaultTTL = defaultTTL;
-  }
-
-  set(key: string, value: any, ttl?: number): void {
-    const expiry = Date.now() + (ttl || this.defaultTTL);
-    this.cache.set(key, { data: value, expiry });
-  }
-
-  get(key: string): any | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    if (Date.now() > entry.expiry) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    return entry.data;
-  }
-
-  has(key: string): boolean {
-    return this.get(key) !== null;
-  }
-
-  delete(key: string): boolean {
-    return this.cache.delete(key);
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-
-  size(): number {
-    // Clean expired entries first
-    this.cleanExpired();
-    return this.cache.size;
-  }
-
-  private cleanExpired(): void {
-    const now = Date.now();
-    // Use Array.from to avoid iterator issues
-    const entries = Array.from(this.cache.entries());
-    for (const [key, entry] of entries) {
-      if (now > entry.expiry) {
-        this.cache.delete(key);
-      }
-    }
-  }
-}
-
-// Redis cache implementation (optional)
-class RedisCache {
-  private redis: any;
-  protected defaultTTL: number;
-
-  constructor(redisClient: any, defaultTTL: number = 300) { // 5 minutes default
-    this.redis = redisClient;
-    this.defaultTTL = defaultTTL;
-  }
-
-  async set(key: string, value: any, ttl?: number): Promise<void> {
-    const serialized = JSON.stringify(value);
-    if (ttl || this.defaultTTL) {
-      await this.redis.setex(key, ttl || this.defaultTTL, serialized);
-    } else {
-      await this.redis.set(key, serialized);
-    }
-  }
-
-  async get(key: string): Promise<any | null> {
-    try {
-      const value = await this.redis.get(key);
-      return value ? JSON.parse(value) : null;
-    } catch (error) {
-      console.warn('Redis get error:', error);
-      return null;
-    }
-  }
-
-  async has(key: string): Promise<boolean> {
-    try {
-      const exists = await this.redis.exists(key);
-      return exists === 1;
-    } catch (error) {
-      console.warn('Redis exists error:', error);
-      return false;
-    }
-  }
-
-  async delete(key: string): Promise<boolean> {
-    try {
-      const result = await this.redis.del(key);
-      return result === 1;
-    } catch (error) {
-      console.warn('Redis delete error:', error);
-      return false;
-    }
-  }
-
-  async clear(): Promise<void> {
-    try {
-      await this.redis.flushdb();
-    } catch (error) {
-      console.warn('Redis clear error:', error);
-    }
-  }
-}
-
-// Cache configuration
-const CACHE_CONFIG = {
-  enabled: true,
-  type: 'memory', // 'memory' or 'redis'
-  ttl: 10 * 60 * 1000, // 10 minutes for OpenAPI specs (they rarely change)
-  redis: {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-    keyPrefix: 'openapi:'
-  }
-};
-
-// Initialize cache based on configuration
-let cache: InMemoryCache | RedisCache;
-
-if (CACHE_CONFIG.type === 'redis' && process.env.REDIS_URL) {
-  // Redis implementation would go here
-  // For now, fallback to in-memory
-  console.log('📝 Note: Redis cache requested but not implemented. Using in-memory cache.');
-  cache = new InMemoryCache(CACHE_CONFIG.ttl);
-} else {
-  cache = new InMemoryCache(CACHE_CONFIG.ttl);
-}
-
-console.log(`🗄️  Cache initialized: ${CACHE_CONFIG.type} (TTL: ${CACHE_CONFIG.ttl / 1000}s)`);
-
-// Cache management utilities
-const CacheManager = {
-  getStats: async () => {
-    if (cache instanceof RedisCache) {
-      // For Redis, we'd need to implement proper stats
-      return { type: 'redis', status: 'connected' };
-    } else {
-      return {
-        type: 'memory',
-        size: cache.size(),
-        ttl: CACHE_CONFIG.ttl,
-        enabled: CACHE_CONFIG.enabled
-      };
-    }
-  },
-  
-  clear: async () => {
-    if (cache instanceof RedisCache) {
-      await cache.clear();
-    } else {
-      cache.clear();
-    }
-    console.log('🧹 Cache cleared');
-  },
-  
-  invalidateModel: async (modelId: string) => {
-    const cacheKey = `${CACHE_CONFIG.redis.keyPrefix}${modelId}`;
-    if (cache instanceof RedisCache) {
-      await cache.delete(cacheKey);
-    } else {
-      cache.delete(cacheKey);
-    }
-    console.log(`🗑️  Invalidated cache for model: ${modelId}`);
-  }
-};
+// Cache TTL in seconds (10 minutes for OpenAPI specs)
+const CACHE_TTL = 600;
 
 // Model quality rankings - based on performance, popularity, and reliability
 const MODEL_QUALITY_SCORES: Record<string, number> = {
@@ -273,7 +115,7 @@ Return exactly 3 model IDs from the list above, prioritizing quality and relevan
     });
 
     const result = await stream.object;
-    
+
     if (!result || !result.selectedModels || result.selectedModels.length === 0) {
       console.warn('🔄 LLM selection returned empty results, falling back to quality sorting');
       return candidateModels
@@ -300,7 +142,7 @@ Return exactly 3 model IDs from the list above, prioritizing quality and relevan
   } catch (error) {
     console.error('❌ Error in LLM model selection:', error);
     console.log('🔄 Falling back to quality-based sorting');
-    
+
     // Robust fallback to quality-based sorting
     return candidateModels
       .filter(model => !model.requiresImage || hasImageInput) // Filter out image models if no image
@@ -441,7 +283,7 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
 
     // If we have good quality models, try LLM selection, otherwise use simple ranking
     let selectedModels: any[];
-    
+
     if (filteredModels.length >= 3) {
       try {
         // Try LLM selection with improved error handling
@@ -526,17 +368,17 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
 async function fetchModelOpenAPI(modelId: string) {
   try {
     // Check cache first
-    const cacheKey = `${CACHE_CONFIG.redis.keyPrefix}${modelId}`;
-    
-    if (CACHE_CONFIG.enabled) {
-      const cachedSpec = cache instanceof RedisCache 
-        ? await cache.get(cacheKey)
-        : cache.get(cacheKey);
-      
-      if (cachedSpec) {
+    const cacheKey = `openapi:${modelId}`;
+
+    try {
+      const cachedValue = await redis.get(cacheKey);
+      if (cachedValue) {
+        const cachedSpec = JSON.parse(cachedValue);
         console.log(`🎯 Cache hit for OpenAPI spec: ${modelId}`);
         return cachedSpec;
       }
+    } catch (cacheError) {
+      console.warn('Redis get error:', cacheError);
     }
 
     console.log(`🌐 Fetching OpenAPI spec for: ${modelId}`);
@@ -546,14 +388,14 @@ async function fetchModelOpenAPI(modelId: string) {
     const response = await fetch(openApiUrl);
     const openApiSpec = await response.json();
 
-    // Cache the result if caching is enabled
-    if (CACHE_CONFIG.enabled && openApiSpec) {
-      if (cache instanceof RedisCache) {
-        await cache.set(cacheKey, openApiSpec);
-      } else {
-        cache.set(cacheKey, openApiSpec);
+    // Cache the result
+    if (openApiSpec) {
+      try {
+        await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(openApiSpec));
+        console.log(`💾 Cached OpenAPI spec for: ${modelId}`);
+      } catch (cacheError) {
+        console.warn('Redis set error:', cacheError);
       }
-      console.log(`💾 Cached OpenAPI spec for: ${modelId}`);
     }
 
     return openApiSpec;
@@ -936,46 +778,94 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
   // console.log(tools);
 }
 
-const server = serve({
-  idleTimeout: 200,
-  routes: {
-    // Serve index.html for all unmatched routes.
-    "/*": index,
+async function loadChat(chatId: string) {
+  try {
+    const messages = await redis.get(`chat:${chatId}`);
+    if (messages) {
+      return JSON.parse(messages);
+    }
+    return [];
+  } catch (error) {
+    console.error('Error loading chat:', error);
+    return [];
+  }
+}
+import { createResumableStreamContext } from 'resumable-stream';
 
-    "/api/chat": {
-      async POST(req) {
-        try {
-          const body = await req.json();
-          const { messages } = body;
-
-          if (!messages) {
-            return Response.json(
-              { error: "Messages is required" },
-              { status: 400 }
-            );
-          }
-
-          // console.log(messages);
-
-          const stream = createUIMessageStream({
-            execute: ({ writer }) => {
-              writer.merge(createAIStream(messages, writer).toUIMessageStream())
-            }
-          })
-
-          return createUIMessageStreamResponse({ stream })
-        } catch (error) {
-          console.error('Agent error:', error);
-          return Response.json(
-            { error: "Failed to process request" },
-            { status: 500 }
-          );
-        }
-      },
-    },
-  },
-
-  development: process.env.NODE_ENV !== "production",
+const context = createResumableStreamContext({
+  waitUntil: async (fn) => {
+    await fn;
+  }
 });
 
-console.log(`🚀 Server running at ${server.url}`);
+async function startServer() {
+  // Initialize Redis first
+  await initializeRedis();
+
+  const server = serve({
+    idleTimeout: 200,
+    routes: {
+      // Serve index.html for all unmatched routes.
+      "/*": index,
+
+      "/api/chat/new": {
+        async POST(req) {
+          const chatId = crypto.randomUUID();
+          await redis.set(`chat:${chatId}`, JSON.stringify([]));
+          return Response.json({ chatId });
+        }
+      },
+
+      "/api/chat": {
+
+        async GET(req) {
+          const { searchParams } = new URL(req.url);
+          const chatId = searchParams.get('chatId');
+
+
+
+          if (chatId) {
+            return Response.json(await loadChat(chatId));
+          }
+        },
+
+        async POST(req) {
+          try {
+            const body = await req.json();
+            const { messages } = body;
+
+            if (!messages) {
+              return Response.json(
+                { error: "Messages is required" },
+                { status: 400 }
+              );
+            }
+
+            // console.log(messages);
+
+            const stream = createUIMessageStream({
+              execute: ({ writer }) => {
+                writer.merge(createAIStream(messages, writer).toUIMessageStream())
+              }
+            })
+
+            return createUIMessageStreamResponse({ stream })
+          } catch (error) {
+            console.error('Agent error:', error);
+            return Response.json(
+              { error: "Failed to process request" },
+              { status: 500 }
+            );
+          }
+        },
+      },
+    },
+
+    development: process.env.NODE_ENV !== "production",
+  });
+
+  console.log(`🚀 Server running at ${server.url}`);
+}
+
+// Start the server
+startServer().catch(console.error);
