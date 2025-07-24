@@ -1,12 +1,185 @@
 import { serve, spawn } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject } from 'ai';
 import { z } from "zod";
 
 import Exa from 'exa-js';
 import { fal } from "@fal-ai/client";
 
 export const exa = new Exa(process.env.EXA_API_KEY);
+
+// Simple in-memory cache with TTL
+class InMemoryCache {
+  private cache: Map<string, { data: any; expiry: number }> = new Map();
+  private defaultTTL: number;
+
+  constructor(defaultTTL: number = 5 * 60 * 1000) { // 5 minutes default
+    this.defaultTTL = defaultTTL;
+  }
+
+  set(key: string, value: any, ttl?: number): void {
+    const expiry = Date.now() + (ttl || this.defaultTTL);
+    this.cache.set(key, { data: value, expiry });
+  }
+
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== null;
+  }
+
+  delete(key: string): boolean {
+    return this.cache.delete(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  size(): number {
+    // Clean expired entries first
+    this.cleanExpired();
+    return this.cache.size;
+  }
+
+  private cleanExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiry) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+// Redis cache implementation (optional)
+class RedisCache {
+  private redis: any;
+  private defaultTTL: number;
+
+  constructor(redisClient: any, defaultTTL: number = 300) { // 5 minutes default
+    this.redis = redisClient;
+    this.defaultTTL = defaultTTL;
+  }
+
+  async set(key: string, value: any, ttl?: number): Promise<void> {
+    const serialized = JSON.stringify(value);
+    if (ttl || this.defaultTTL) {
+      await this.redis.setex(key, ttl || this.defaultTTL, serialized);
+    } else {
+      await this.redis.set(key, serialized);
+    }
+  }
+
+  async get(key: string): Promise<any | null> {
+    try {
+      const value = await this.redis.get(key);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      console.warn('Redis get error:', error);
+      return null;
+    }
+  }
+
+  async has(key: string): Promise<boolean> {
+    try {
+      const exists = await this.redis.exists(key);
+      return exists === 1;
+    } catch (error) {
+      console.warn('Redis exists error:', error);
+      return false;
+    }
+  }
+
+  async delete(key: string): Promise<boolean> {
+    try {
+      const result = await this.redis.del(key);
+      return result === 1;
+    } catch (error) {
+      console.warn('Redis delete error:', error);
+      return false;
+    }
+  }
+
+  async clear(): Promise<void> {
+    try {
+      await this.redis.flushdb();
+    } catch (error) {
+      console.warn('Redis clear error:', error);
+    }
+  }
+}
+
+// Cache configuration
+const CACHE_CONFIG = {
+  enabled: true,
+  type: 'memory', // 'memory' or 'redis'
+  ttl: 10 * 60 * 1000, // 10 minutes for OpenAPI specs (they rarely change)
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    keyPrefix: 'openapi:'
+  }
+};
+
+// Initialize cache based on configuration
+let cache: InMemoryCache | RedisCache;
+
+if (CACHE_CONFIG.type === 'redis' && process.env.REDIS_URL) {
+  // Redis implementation would go here
+  // For now, fallback to in-memory
+  console.log('📝 Note: Redis cache requested but not implemented. Using in-memory cache.');
+  cache = new InMemoryCache(CACHE_CONFIG.ttl);
+} else {
+  cache = new InMemoryCache(CACHE_CONFIG.ttl);
+}
+
+console.log(`🗄️  Cache initialized: ${CACHE_CONFIG.type} (TTL: ${CACHE_CONFIG.ttl / 1000}s)`);
+
+// Cache management utilities
+const CacheManager = {
+  getStats: async () => {
+    if (cache instanceof RedisCache) {
+      // For Redis, we'd need to implement proper stats
+      return { type: 'redis', status: 'connected' };
+    } else {
+      return {
+        type: 'memory',
+        size: cache.size(),
+        ttl: CACHE_CONFIG.ttl,
+        enabled: CACHE_CONFIG.enabled
+      };
+    }
+  },
+  
+  clear: async () => {
+    if (cache instanceof RedisCache) {
+      await cache.clear();
+    } else {
+      cache.clear();
+    }
+    console.log('🧹 Cache cleared');
+  },
+  
+  invalidateModel: async (modelId: string) => {
+    const cacheKey = `${CACHE_CONFIG.redis.keyPrefix}${modelId}`;
+    if (cache instanceof RedisCache) {
+      await cache.delete(cacheKey);
+    } else {
+      cache.delete(cacheKey);
+    }
+    console.log(`🗑️  Invalidated cache for model: ${modelId}`);
+  }
+};
 
 // Model quality rankings - based on performance, popularity, and reliability
 const MODEL_QUALITY_SCORES: Record<string, number> = {
@@ -50,13 +223,13 @@ const CATEGORY_PREFERENCES = {
 };
 
 // Helper function to use LLM for intelligent model selection
-async function selectBestModelWithLLM(userQuery: string, candidateModels: any[], hasImageInput: boolean): Promise<any[]> {
+async function selectBestModelWithLLM(userQuery: string, candidateModels: any[], hasImageInput: boolean, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>): Promise<any[]> {
   try {
     const modelDescriptions = candidateModels.map(model =>
       `${model.id}: ${model.title} - ${model.description} (Category: ${model.category}, Quality Score: ${model.qualityScore}${model.requiresImage ? ', Requires Image Input' : ''})`
     ).join('\n');
 
-    const { object } = await generateObject({
+    const stream = await streamObject({
       model: "anthropic/claude-4-sonnet",
       system: `You are an AI model selection expert. Given a user's request and available models, select the best 3 models in order of preference.
 
@@ -92,6 +265,8 @@ Select the best 3 models for this request, prioritizing quality and relevance. $
       ],
     });
 
+    const object = await stream.object;
+
     console.log(`🤖 LLM Selection Reasoning: ${object.reasoning}`);
 
     // Return models in the LLM's preferred order
@@ -101,6 +276,7 @@ Select the best 3 models for this request, prioritizing quality and relevance. $
 
   } catch (error) {
     console.error('Error in LLM model selection:', error);
+    throw error;
     // Fallback to quality-based sorting
     return candidateModels
       .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
@@ -109,7 +285,7 @@ Select the best 3 models for this request, prioritizing quality and relevance. $
 }
 
 // Helper function to search fal.ai models
-async function searchFalModels(userQuery: string, maxResults: number = 3) {
+async function searchFalModels(userQuery: string, maxResults: number = 3, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   try {
     // Extract keywords and potential categories from user query
     const queryLower = userQuery.toLowerCase();
@@ -239,7 +415,7 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
       .slice(0, Math.min(10, maxResults * 3)); // Get more candidates for LLM selection
 
     // Use LLM to intelligently select the best models
-    const selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput);
+    const selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput, writer);
 
     // Take the requested number of results
     const finalModels = selectedModels.slice(0, maxResults);
@@ -288,11 +464,36 @@ async function searchFalModels(userQuery: string, maxResults: number = 3) {
 // Helper function to fetch OpenAPI spec for a fal.ai model
 async function fetchModelOpenAPI(modelId: string) {
   try {
+    // Check cache first
+    const cacheKey = `${CACHE_CONFIG.redis.keyPrefix}${modelId}`;
+    
+    if (CACHE_CONFIG.enabled) {
+      const cachedSpec = cache instanceof RedisCache 
+        ? await cache.get(cacheKey)
+        : cache.get(cacheKey);
+      
+      if (cachedSpec) {
+        console.log(`🎯 Cache hit for OpenAPI spec: ${modelId}`);
+        return cachedSpec;
+      }
+    }
+
+    console.log(`🌐 Fetching OpenAPI spec for: ${modelId}`);
     const encodedModelId = encodeURIComponent(modelId);
     const openApiUrl = `https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=${encodedModelId}`;
 
     const response = await fetch(openApiUrl);
     const openApiSpec = await response.json();
+
+    // Cache the result if caching is enabled
+    if (CACHE_CONFIG.enabled && openApiSpec) {
+      if (cache instanceof RedisCache) {
+        await cache.set(cacheKey, openApiSpec);
+      } else {
+        cache.set(cacheKey, openApiSpec);
+      }
+      console.log(`💾 Cached OpenAPI spec for: ${modelId}`);
+    }
 
     return openApiSpec;
   } catch (error) {
@@ -565,7 +766,7 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
           return images || video;
         } catch (error) {
           console.error(error);
-          return "Error calling tool";
+          throw error;
         }
       }
     };
@@ -630,12 +831,13 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
   }),
   execute: async ({ prompt }, { toolCallId }) => {
     console.log("Searching fal.ai models for:", prompt);
-    const tools = await createVercelToolsFromModels(await searchFalModels(prompt, 5));
+    const tools = await createVercelToolsFromModels(await searchFalModels(prompt, 5, writer));
 
     const stream = await streamText({
       model: "anthropic/claude-4-sonnet",
       system: `You are a creative agent. The agent has decided to use the following tools to create the user's prompt. Some tools might require image_url, make sure to only use those when you have existing images`,
       prompt: prompt,
+      maxRetries: 3,
       tools,
     })
 
@@ -660,6 +862,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     `,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
+    maxRetries: 3,
     tools: {
       webSearch,
       falTools: falTools(writer),
