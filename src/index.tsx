@@ -11,7 +11,7 @@ export const exa = new Exa(process.env.EXA_API_KEY);
 // Simple in-memory cache with TTL
 class InMemoryCache {
   private cache: Map<string, { data: any; expiry: number }> = new Map();
-  private defaultTTL: number;
+  protected defaultTTL: number;
 
   constructor(defaultTTL: number = 5 * 60 * 1000) { // 5 minutes default
     this.defaultTTL = defaultTTL;
@@ -54,7 +54,9 @@ class InMemoryCache {
 
   private cleanExpired(): void {
     const now = Date.now();
-    for (const [key, entry] of this.cache.entries()) {
+    // Use Array.from to avoid iterator issues
+    const entries = Array.from(this.cache.entries());
+    for (const [key, entry] of entries) {
       if (now > entry.expiry) {
         this.cache.delete(key);
       }
@@ -65,7 +67,7 @@ class InMemoryCache {
 // Redis cache implementation (optional)
 class RedisCache {
   private redis: any;
-  private defaultTTL: number;
+  protected defaultTTL: number;
 
   constructor(redisClient: any, defaultTTL: number = 300) { // 5 minutes default
     this.redis = redisClient;
@@ -226,59 +228,82 @@ const CATEGORY_PREFERENCES = {
 async function selectBestModelWithLLM(userQuery: string, candidateModels: any[], hasImageInput: boolean, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>): Promise<any[]> {
   try {
     const modelDescriptions = candidateModels.map(model =>
-      `${model.id}: ${model.title} - ${model.description} (Category: ${model.category}, Quality Score: ${model.qualityScore}${model.requiresImage ? ', Requires Image Input' : ''})`
+      `${model.id}: ${model.title} - ${model.description} (Quality Score: ${model.qualityScore}${model.requiresImage ? ', Requires Image Input' : ''})`
     ).join('\n');
+
+    // Extract valid model IDs for validation
+    const validModelIds = candidateModels.map(model => model.id);
 
     const stream = await streamObject({
       model: "anthropic/claude-4-sonnet",
-      system: `You are an AI model selection expert. Given a user's request and available models, select the best 3 models in order of preference.
+      system: `You are an AI model selection expert. You must respond with EXACTLY the required JSON format.
 
-IMPORTANT SELECTION CRITERIA:
-1. QUALITY: Higher quality scores indicate better, more reliable models
-2. RELEVANCE: How well the model matches the user's specific needs
-3. SPECIALIZATION: Models specialized for the task are preferred
-4. CONTEXT: Consider if user wants speed vs quality, artistic vs photorealistic, etc.
-5. IMAGE REQUIREMENTS: NEVER select models that require images when the user hasn't provided one
+CRITICAL: You MUST only select model IDs from the provided list. Do not make up or modify any model IDs.
 
-For image generation:
-- Flux models (especially flux/dev, flux-pro, and flux-kontext) are generally the highest quality
-- Choose flux/schnell for speed, flux/dev for balance, flux-pro for maximum quality
-- Use flux-kontext for complex prompts with detailed descriptions and context
-- Consider recraft-v3 for artistic/design work`,
+Selection criteria (in order of importance):
+1. QUALITY: Higher quality scores indicate better models
+2. RELEVANCE: How well the model matches the user's specific needs  
+3. IMAGE REQUIREMENTS: NEVER select models requiring images when user hasn't provided one
+4. SPECIALIZATION: Prefer models specialized for the task
+
+For image generation, Flux models are generally highest quality:
+- flux/dev: Best balance of quality and speed
+- flux-pro: Maximum quality but slower
+- flux/schnell: Fastest option
+- flux-kontext: Best for complex, detailed prompts`,
 
       schema: z.object({
-        selectedModels: z.array(z.string()).max(3).describe("Array of model IDs in order of preference"),
-        reasoning: z.string().optional().describe("Brief explanation of the selection")
+        selectedModels: z.array(z.enum(validModelIds as [string, ...string[]])).max(3).describe("Array of exactly 3 model IDs from the provided list, in order of preference"),
+        reasoning: z.string().min(10).max(200).describe("Brief explanation of why these models were selected")
       }),
 
       messages: [
         {
           role: "user",
           content: `User request: "${userQuery}"
-User has provided an image: ${hasImageInput ? 'YES' : 'NO'}
+Has image input: ${hasImageInput ? 'YES' : 'NO'}
 
-Available models:
+Available models (select ONLY from these IDs):
 ${modelDescriptions}
 
-Select the best 3 models for this request, prioritizing quality and relevance. ${!hasImageInput ? 'DO NOT select any models that require image input.' : ''}`
+Return exactly 3 model IDs from the list above, prioritizing quality and relevance. ${!hasImageInput ? 'IMPORTANT: Do not select any models that require image input.' : ''}`
         }
       ],
+      maxRetries: 2,
     });
 
-    const object = await stream.object;
+    const result = await stream.object;
+    
+    if (!result || !result.selectedModels || result.selectedModels.length === 0) {
+      console.warn('🔄 LLM selection returned empty results, falling back to quality sorting');
+      return candidateModels
+        .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
+        .slice(0, 3);
+    }
 
-    console.log(`🤖 LLM Selection Reasoning: ${object.reasoning}`);
+    console.log(`🤖 LLM Selection Reasoning: ${result.reasoning}`);
 
-    // Return models in the LLM's preferred order
-    return object.selectedModels.map((id: string) =>
-      candidateModels.find(model => model.id === id)
-    ).filter(Boolean);
+    // Return models in the LLM's preferred order, with validation
+    const selectedModels = result.selectedModels
+      .map((id: string) => candidateModels.find(model => model.id === id))
+      .filter(Boolean);
+
+    if (selectedModels.length === 0) {
+      console.warn('🔄 No valid models found in LLM selection, falling back');
+      return candidateModels
+        .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
+        .slice(0, 3);
+    }
+
+    return selectedModels;
 
   } catch (error) {
-    console.error('Error in LLM model selection:', error);
-    throw error;
-    // Fallback to quality-based sorting
+    console.error('❌ Error in LLM model selection:', error);
+    console.log('🔄 Falling back to quality-based sorting');
+    
+    // Robust fallback to quality-based sorting
     return candidateModels
+      .filter(model => !model.requiresImage || hasImageInput) // Filter out image models if no image
       .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
       .slice(0, 3);
   }
@@ -414,8 +439,44 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
       .sort((a: any, b: any) => b.relevanceScore - a.relevanceScore)
       .slice(0, Math.min(10, maxResults * 3)); // Get more candidates for LLM selection
 
-    // Use LLM to intelligently select the best models
-    const selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput, writer);
+    // If we have good quality models, try LLM selection, otherwise use simple ranking
+    let selectedModels: any[];
+    
+    if (filteredModels.length >= 3) {
+      try {
+        // Try LLM selection with improved error handling
+        selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput, writer);
+      } catch (error) {
+        console.warn('🔄 LLM selection failed, using quality-based ranking');
+        selectedModels = filteredModels
+          .filter(model => !model.requiresImage || hasImageInput)
+          .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
+          .slice(0, maxResults);
+      }
+    } else {
+      // Not enough candidates for LLM selection, use simple ranking
+      console.log('📊 Using simple quality ranking (insufficient candidates for LLM selection)');
+      selectedModels = filteredModels
+        .filter(model => !model.requiresImage || hasImageInput)
+        .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
+        .slice(0, maxResults);
+    }
+
+    // Final fallback - ensure we always return something useful
+    if (selectedModels.length === 0) {
+      console.warn('⚠️  No suitable models found, using default high-quality models');
+      const defaultModels = ['fal-ai/flux/dev', 'fal-ai/flux/schnell', 'fal-ai/flux-kontext']
+        .slice(0, maxResults)
+        .map(id => ({
+          id,
+          title: id.split('/').pop() || id,
+          category: 'text-to-image',
+          description: 'High-quality image generation model',
+          qualityScore: MODEL_QUALITY_SCORES[id] || 90,
+          relevanceScore: 50
+        }));
+      selectedModels = defaultModels;
+    }
 
     // Take the requested number of results
     const finalModels = selectedModels.slice(0, maxResults);
@@ -448,7 +509,7 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
       id: model.id,
       title: model.title,
       category: model.category,
-      description: model.shortDescription,
+      description: model.shortDescription || model.description,
       url: model.modelUrl,
       pricing: model.pricingInfoOverride,
       relevanceScore: model.relevanceScore,
