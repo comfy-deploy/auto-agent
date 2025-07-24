@@ -922,7 +922,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     8. You will also need to return the result of the tool call.
     `,
     messages: convertToModelMessages(messages),
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(20),
     maxRetries: 3,
     tools: {
       webSearch,
