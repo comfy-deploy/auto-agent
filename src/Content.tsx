@@ -2,14 +2,43 @@ import React, { useRef, useState, useEffect, type FormEvent, type KeyboardEvent 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X } from "lucide-react";
 
-export function APITester() {
+export function Content() {
   const { messages, sendMessage, status } = useChat({});
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Extract all media items from messages
+  const getAllMediaItems = () => {
+    const mediaItems: Array<{id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number}> = [];
+    
+    messages.forEach((message) => {
+      message.parts.forEach((part, partIndex) => {
+        if (part.type?.startsWith("tool-") && (part as any).output && Array.isArray((part as any).output)) {
+          (part as any).output.forEach((item: any, itemIndex: number) => {
+            if (item.type === "image" || item.type === "video") {
+              mediaItems.push({
+                id: `${message.id}-${partIndex}-${itemIndex}`,
+                type: item.type,
+                url: item.url,
+                width: item.width,
+                height: item.height,
+                messageId: message.id,
+                partIndex
+              });
+            }
+          });
+        }
+      });
+    });
+    
+    return mediaItems;
+  };
+
+  const mediaItems = getAllMediaItems();
 
   // Auto-collapse completed tools (only once when they first complete)
   useEffect(() => {
@@ -81,7 +110,10 @@ export function APITester() {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Messages Container */}
-      <div className="flex-1 flex flex-col pb-16 pt-16">
+      <div className={cn(
+        "flex-1 flex flex-col pt-16",
+        mediaItems.length > 0 ? "pb-44" : "pb-16"
+      )}>
         <div className="w-full max-w-4xl mx-auto px-6 pb-4">
           <div className="flex flex-col-reverse space-y-2 space-y-reverse">
             {isLoading && (
@@ -106,20 +138,20 @@ export function APITester() {
               <div key={message.id} className="flex flex-col gap-2">
                 {message.parts.map((part, partIndex) => {
                   // Handle different part types
-                  if (part.type === "step-start") {
-                    return (
-                      <div key={partIndex} className="flex gap-2 justify-start">
-                        <div className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                          <Wrench className="w-3 h-3 text-white" />
-                        </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                          <div className="text-sm text-blue-700 font-medium">
-                            Starting analysis...
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
+                  // if (part.type === "step-start") {
+                  //   return (
+                  //     <div key={partIndex} className="flex gap-2 justify-start">
+                  //       <div className="flex-shrink-0 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                  //         <Wrench className="w-3 h-3 text-white" />
+                  //       </div>
+                  //       <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  //         <div className="text-sm text-blue-700 font-medium">
+                  //           Starting analysis...
+                  //         </div>
+                  //       </div>
+                  //     </div>
+                  //   );
+                  // }
 
                   if (part.type?.startsWith("tool-")) {
                     const toolName = part.type.replace("tool-", "");
@@ -293,6 +325,54 @@ export function APITester() {
 
       {/* Input Area */}
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full">
+        {/* Media Gallery */}
+        {mediaItems.length > 0 && (
+          <div className="px-6 py-2 border-t bg-background/95 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground font-medium">
+                Media ({mediaItems.length})
+              </span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+              {mediaItems.map((item) => (
+                <div key={item.id} className="flex-shrink-0 relative group">
+                  {item.type === 'image' ? (
+                    <img
+                      src={item.url}
+                      alt="Generated image"
+                      className="h-16 w-16 object-cover rounded border bg-muted hover:opacity-80 transition-opacity cursor-pointer"
+                      onClick={() => {
+                        // Open image in new tab for full view
+                        window.open(item.url, '_blank');
+                      }}
+                    />
+                  ) : (
+                    <div className="h-16 w-16 relative rounded border bg-muted overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                         onClick={() => {
+                           // Open video in new tab for full view
+                           window.open(item.url, '_blank');
+                         }}>
+                      <video
+                        src={item.url}
+                        className="h-full w-full object-cover"
+                        muted
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <div className="w-4 h-4 border-l-2 border-white border-l-white/80 border-transparent ml-1"></div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-4 h-4 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs">
+                      {item.type === 'image' ? '🖼️' : '🎥'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
         <div className="px-6 py-4">
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <textarea

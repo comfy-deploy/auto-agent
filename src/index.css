@@ -49,3 +49,13 @@ body::before {
     animation: none !important;
   }
 }
+
+/* Hide scrollbars for horizontal media gallery */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

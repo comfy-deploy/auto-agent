@@ -904,7 +904,7 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
 
     writer.merge(stream.toUIMessageStream());
 
-    return "Fal call completed";
+    return Object.keys(tools);
   }
 });
 
@@ -926,7 +926,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     maxRetries: 3,
     tools: {
       webSearch,
-      falTools: falTools(writer),
+      model_search: falTools(writer),
     },
   });
 
