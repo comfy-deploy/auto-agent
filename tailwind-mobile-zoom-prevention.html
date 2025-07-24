@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prevent Mobile Zoom with Tailwind CSS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-4 font-sans">
+    <div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">Mobile-Friendly Form</h1>
+        
+        <form class="space-y-4">
+            <!-- Text Input - text-base prevents zoom (16px) -->
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
+                    Name
+                </label>
+                <input 
+                    type="text" 
+                    id="name" 
+                    name="name"
+                    placeholder="Enter your name"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[48px]"
+                >
+            </div>
+
+            <!-- Email Input -->
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                </label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email"
+                    placeholder="Enter your email"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[48px]"
+                >
+            </div>
+
+            <!-- Phone Input -->
+            <div>
+                <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">
+                    Phone
+                </label>
+                <input 
+                    type="tel" 
+                    id="phone" 
+                    name="phone"
+                    placeholder="Enter your phone number"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[48px]"
+                >
+            </div>
+
+            <!-- Number Input -->
+            <div>
+                <label for="age" class="block text-sm font-medium text-gray-700 mb-1">
+                    Age
+                </label>
+                <input 
+                    type="number" 
+                    id="age" 
+                    name="age"
+                    placeholder="Enter your age"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[48px]"
+                >
+            </div>
+
+            <!-- Textarea -->
+            <div>
+                <label for="message" class="block text-sm font-medium text-gray-700 mb-1">
+                    Message
+                </label>
+                <textarea 
+                    id="message" 
+                    name="message"
+                    rows="4"
+                    placeholder="Enter your message"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
+                ></textarea>
+            </div>
+
+            <!-- Select Dropdown -->
+            <div>
+                <label for="country" class="block text-sm font-medium text-gray-700 mb-1">
+                    Country
+                </label>
+                <select 
+                    id="country" 
+                    name="country"
+                    class="w-full text-base px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[48px] bg-white"
+                >
+                    <option value="">Select your country</option>
+                    <option value="us">United States</option>
+                    <option value="ca">Canada</option>
+                    <option value="uk">United Kingdom</option>
+                    <option value="au">Australia</option>
+                </select>
+            </div>
+
+            <!-- Submit Button -->
+            <button 
+                type="submit"
+                class="w-full bg-blue-600 text-white text-base font-medium py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors min-h-[48px]"
+            >
+                Submit Form
+            </button>
+        </form>
+
+        <!-- Alternative sizes for different breakpoints -->
+        <div class="mt-8 p-4 bg-gray-100 rounded-md">
+            <h3 class="text-lg font-semibold mb-3">Responsive Font Sizes</h3>
+            
+            <!-- Responsive input with larger font on smaller screens -->
+            <div class="mb-4">
+                <label for="responsive-input" class="block text-sm font-medium text-gray-700 mb-1">
+                    Responsive Input (16px base, 18px on mobile)
+                </label>
+                <input 
+                    type="text" 
+                    id="responsive-input"
+                    placeholder="Responsive font size"
+                    class="w-full text-base sm:text-lg px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[48px]"
+                >
+            </div>
+
+            <!-- Even larger for very small screens -->
+            <div>
+                <label for="large-mobile-input" class="block text-sm font-medium text-gray-700 mb-1">
+                    Large Mobile Input (18px on mobile, 20px on tiny screens)
+                </label>
+                <input 
+                    type="text" 
+                    id="large-mobile-input"
+                    placeholder="Large mobile font"
+                    class="w-full text-lg sm:text-xl px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[48px]"
+                >
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Box -->
+    <div class="max-w-md mx-auto mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <h3 class="text-lg font-semibold text-blue-800 mb-2">💡 Tailwind Classes Used</h3>
+        <ul class="text-sm text-blue-700 space-y-1">
+            <li><code class="bg-blue-100 px-1 rounded">text-base</code> = 16px font size (prevents zoom)</li>
+            <li><code class="bg-blue-100 px-1 rounded">text-lg</code> = 18px font size</li>
+            <li><code class="bg-blue-100 px-1 rounded">text-xl</code> = 20px font size</li>
+            <li><code class="bg-blue-100 px-1 rounded">min-h-[48px]</code> = Minimum touch target</li>
+            <li><code class="bg-blue-100 px-1 rounded">sm:text-lg</code> = Responsive sizing</li>
+        </ul>
+    </div>
+</body>
+</html>
