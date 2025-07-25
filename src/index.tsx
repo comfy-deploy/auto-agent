@@ -2,21 +2,21 @@ import { RedisClient, serve, spawn } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
-import { RedisMemoryServer } from 'redis-memory-server';
+// import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
 
 // Initialize Redis asynchronously
 
 let redis: Redis;
 
-if (!process.env.REDIS_URL && !process.env.UPSTASH_REDIS_REST_URL) {
-  const redisServer = new RedisMemoryServer();
-  const host = await redisServer.getHost();
-  const port = await redisServer.getPort();
-  console.log(`🔴 Redis server started at ${host}:${port}`);
+// if (!process.env.REDIS_URL && !process.env.UPSTASH_REDIS_REST_URL) {
+//   const redisServer = new RedisMemoryServer();
+//   const host = await redisServer.getHost();
+//   const port = await redisServer.getPort();
+//   console.log(`🔴 Redis server started at ${host}:${port}`);
 
-  process.env.REDIS_URL = "redis://" + host + ":" + port;
-}
+//   process.env.REDIS_URL = "redis://" + host + ":" + port;
+// }
 
 // redis = new RedisClient(process.env.REDIS_URL);
 redis = Redis.fromEnv()
@@ -861,10 +861,10 @@ async function startServer() {
         async POST(req) {
           try {
             const body = await req.json();
-            console.log("body", body);
+            // console.log("body", body);
             const { messages, id } = body;
 
-            console.log("the chatId", id);
+            // console.log("the chatId", id);
 
             if (!messages) {
               return Response.json(
