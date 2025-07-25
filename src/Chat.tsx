@@ -1,11 +1,56 @@
 import React, { useRef, useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useChat } from "@ai-sdk/react";
+import { useChat, type UIMessage } from "@ai-sdk/react";
 import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X } from "lucide-react";
+import { useQueryState } from "nuqs";
+import { useMutation } from "@tanstack/react-query";
 
-export function Content() {
-  const { messages, sendMessage, status } = useChat({});
+export function Chat(props: {
+  initialMessages: UIMessage[];
+  chatId: string;
+}) {
+  const [_, setChatId] = useQueryState('chatId')
+  const [prompt, setPrompt] = useQueryState("prompt");
+  const lastSentPrompt = useRef("");
+
+  console.log("props.chatId", props.chatId);
+
+  const { messages, sendMessage, status, resumeStream } = useChat({
+    messages: props.initialMessages,
+    id: props.chatId,
+    // resume: true,
+  });
+
+  useEffect(() => {
+    if (prompt && props.chatId && lastSentPrompt.current !== prompt) {
+      lastSentPrompt.current = prompt;
+      sendMessage({
+        role: "user",
+        text: prompt,
+      });
+      setPrompt(null);
+    }
+  }, [prompt, props.chatId]);
+
+  const { mutateAsync: createChat, isPending: isCreatingChat } = useMutation<{ chatId: string }>({
+    mutationFn: async () => {
+      const response = await fetch('/api/chat/new', {
+        method: 'POST',
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setChatId(data.chatId);
+    }
+  });
+
+  useEffect(() => {
+    // resumeStream();
+    // We want to disable the exhaustive deps rule here because we only want to run this effect once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
 
@@ -13,8 +58,8 @@ export function Content() {
 
   // Extract all media items from messages
   const getAllMediaItems = () => {
-    const mediaItems: Array<{id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number}> = [];
-    
+    const mediaItems: Array<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number }> = [];
+
     messages.forEach((message) => {
       message.parts.forEach((part, partIndex) => {
         if (part.type?.startsWith("tool-") && (part as any).output && Array.isArray((part as any).output)) {
@@ -34,7 +79,7 @@ export function Content() {
         }
       });
     });
-    
+
     return mediaItems;
   };
 
@@ -51,7 +96,7 @@ export function Content() {
         if (part.type?.startsWith("tool-")) {
           const toolId = `${message.id}-${partIndex}`;
           const isCompleted = (part as any).state === "output-available";
-          
+
           // Only auto-collapse if it's completed and we haven't auto-collapsed it before
           if (isCompleted && !autoCollapsedTools.has(toolId)) {
             newCollapsedTools.add(toolId);
@@ -78,22 +123,14 @@ export function Content() {
     setCollapsedTools(newCollapsed);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      if (promptInputRef.current?.value.trim()) {
-        sendMessage({
-          role: "user",
-          text: promptInputRef.current?.value,
-        });
-        promptInputRef.current.value = "";
-      }
+  const handleSubmit = () => {
+    if (!props.chatId) {
+      createChat().then(({ chatId }) => {
+        setPrompt(promptInputRef.current?.value);
+      });
+      return;
     }
-  };
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
     if (promptInputRef.current?.value.trim()) {
       sendMessage({
         role: "user",
@@ -103,10 +140,27 @@ export function Content() {
     }
   };
 
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      handleSubmit()
+      // e.preventDefault();
+      // if (promptInputRef.current?.value.trim()) {
+      //   sendMessage({
+      //     role: "user",
+      //     text: promptInputRef.current?.value,
+      //   });
+      //   promptInputRef.current.value = "";
+      // }
+    }
+  };
+
+
   const isLoading = status !== "ready";
 
   console.log(messages);
-  
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Messages Container */}
@@ -158,7 +212,7 @@ export function Content() {
                     const isCompleted = (part as any).state === "output-available";
                     const toolId = `${message.id}-${partIndex}`;
                     const isCollapsed = collapsedTools.has(toolId);
-                    
+
                     return (
                       <div key={partIndex} className="flex gap-2 justify-start">
                         <div className={cn(
@@ -175,12 +229,12 @@ export function Content() {
                         </div>
                         <div className={cn(
                           "rounded-lg border cursor-pointer transition-all",
-                          isCompleted 
-                            ? "bg-green-50 border-green-200" 
+                          isCompleted
+                            ? "bg-green-50 border-green-200"
                             : "bg-orange-50 border-orange-200",
                           isCollapsed ? "px-3 py-1" : "px-3 py-2"
                         )}
-                        onClick={() => isCompleted && toggleToolCollapse(toolId)}
+                          onClick={() => isCompleted && toggleToolCollapse(toolId)}
                         >
                           <div className="text-sm flex flex-col items-start">
                             <div className={cn(
@@ -196,17 +250,17 @@ export function Content() {
                                 )
                               )}
                               {toolName === "webSearch" && "🔍 Web Search"}
-                              {toolName === "codeSearch" && "💻 Code Search"} 
+                              {toolName === "codeSearch" && "💻 Code Search"}
                               {!["webSearch", "codeSearch"].includes(toolName) && `🛠️ ${toolName}`}
                               {isCompleted && " ✓"}
                             </div>
-                            
+
                             {!isCollapsed && (part as any).input && (
                               <div className="text-xs text-gray-600 mb-2 text-start">
                                 <strong>Query:</strong> {(part as any).input.query || JSON.stringify((part as any).input)}
                               </div>
                             )}
-                            
+
                             {!isCollapsed && (part as any).output && isCompleted && (
                               <div className="text-xs text-gray-600">
                                 {Array.isArray((part as any).output) ? (
@@ -220,8 +274,8 @@ export function Content() {
                                             {item.type === "image" ? (
                                               <div>
                                                 <div className="font-medium text-gray-800 mb-1">🖼️ Image {i + 1}</div>
-                                                <img 
-                                                  src={item.url} 
+                                                <img
+                                                  src={item.url}
                                                   alt={`Generated image ${i + 1}`}
                                                   className="max-w-full h-auto rounded border max-h-48 object-contain"
                                                   style={{ maxWidth: '300px' }}
@@ -233,8 +287,8 @@ export function Content() {
                                             ) : item.type === "video" ? (
                                               <div>
                                                 <div className="font-medium text-gray-800 mb-1">🎥 Video {i + 1}</div>
-                                                <video 
-                                                  src={item.url} 
+                                                <video
+                                                  src={item.url}
                                                   controls
                                                   className="max-w-full h-auto rounded border max-h-48"
                                                   style={{ maxWidth: '300px' }}
@@ -275,8 +329,8 @@ export function Content() {
 
                   if (part.type === "text" && part.text.trim()) {
                     // Skip text parts that are just simple confirmations after tool use
-                    if ((part as any).state === "done" && part.text.length < 50 && 
-                        message.parts.some(p => p.type?.startsWith("tool-"))) {
+                    if ((part as any).state === "done" && part.text.length < 50 &&
+                      message.parts.some(p => p.type?.startsWith("tool-"))) {
                       return null;
                     }
 
@@ -348,10 +402,10 @@ export function Content() {
                     />
                   ) : (
                     <div className="h-16 w-16 relative rounded border bg-muted overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                         onClick={() => {
-                           // Open video in new tab for full view
-                           window.open(item.url, '_blank');
-                         }}>
+                      onClick={() => {
+                        // Open video in new tab for full view
+                        window.open(item.url, '_blank');
+                      }}>
                       <video
                         src={item.url}
                         className="h-full w-full object-cover"
@@ -372,7 +426,7 @@ export function Content() {
             </div>
           </div>
         )}
-        
+
         <div className="px-6 py-4">
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <textarea
