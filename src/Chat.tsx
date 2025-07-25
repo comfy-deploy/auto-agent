@@ -4,12 +4,17 @@ import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useQueryState } from "nuqs";
+import { useMutation } from "@tanstack/react-query";
 
 export function Chat(props: {
   initialMessages: UIMessage[];
   chatId: string;
 }) {
   const [_, setChatId] = useQueryState('chatId')
+  const [prompt, setPrompt] = useQueryState("prompt");
+  const lastSentPrompt = useRef("");
+
+  console.log("props.chatId", props.chatId);
 
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
@@ -18,7 +23,30 @@ export function Chat(props: {
   });
 
   useEffect(() => {
-    resumeStream();
+    if (prompt && props.chatId && lastSentPrompt.current !== prompt) {
+      lastSentPrompt.current = prompt;
+      sendMessage({
+        role: "user",
+        text: prompt,
+      });
+      setPrompt(null);
+    }
+  }, [prompt, props.chatId]);
+
+  const { mutateAsync: createChat, isPending: isCreatingChat } = useMutation<{ chatId: string }>({
+    mutationFn: async () => {
+      const response = await fetch('/api/chat/new', {
+        method: 'POST',
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setChatId(data.chatId);
+    }
+  });
+
+  useEffect(() => {
+    // resumeStream();
     // We want to disable the exhaustive deps rule here because we only want to run this effect once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -95,22 +123,14 @@ export function Chat(props: {
     setCollapsedTools(newCollapsed);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      if (promptInputRef.current?.value.trim()) {
-        sendMessage({
-          role: "user",
-          text: promptInputRef.current?.value,
-        });
-        promptInputRef.current.value = "";
-      }
+  const handleSubmit = () => {
+    if (!props.chatId) {
+      createChat().then(({ chatId }) => {
+        setPrompt(promptInputRef.current?.value);
+      });
+      return;
     }
-  };
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
     if (promptInputRef.current?.value.trim()) {
       sendMessage({
         role: "user",
@@ -119,6 +139,23 @@ export function Chat(props: {
       promptInputRef.current.value = "";
     }
   };
+
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      handleSubmit()
+      // e.preventDefault();
+      // if (promptInputRef.current?.value.trim()) {
+      //   sendMessage({
+      //     role: "user",
+      //     text: promptInputRef.current?.value,
+      //   });
+      //   promptInputRef.current.value = "";
+      // }
+    }
+  };
+
 
   const isLoading = status !== "ready";
 

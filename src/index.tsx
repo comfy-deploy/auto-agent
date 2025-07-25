@@ -1,21 +1,30 @@
 import { RedisClient, serve, spawn } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
 import { RedisMemoryServer } from 'redis-memory-server';
+import { Redis } from "@upstash/redis";
 
 // Initialize Redis asynchronously
-let redis: RedisClient;
 
-async function initializeRedis() {
+let redis: Redis;
+
+if (!process.env.REDIS_URL && !process.env.UPSTASH_REDIS_REST_URL) {
   const redisServer = new RedisMemoryServer();
   const host = await redisServer.getHost();
   const port = await redisServer.getPort();
   console.log(`🔴 Redis server started at ${host}:${port}`);
 
-  redis = new RedisClient("redis://" + host + ":" + port);
-  console.log(`🗄️  Redis initialized successfully`);
+  process.env.REDIS_URL = "redis://" + host + ":" + port;
 }
+
+// redis = new RedisClient(process.env.REDIS_URL);
+redis = Redis.fromEnv()
+console.log(`🗄️  Redis initialized successfully`);
+
+// async function initializeRedis() {
+
+// }
 
 import Exa from 'exa-js';
 import { fal } from "@fal-ai/client";
@@ -764,7 +773,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     8. You will also need to return the result of the tool call.
     `,
     messages: convertToModelMessages(messages),
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(2),
     maxRetries: 3,
     tools: {
       webSearch,
@@ -780,9 +789,11 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
 
 async function loadChat(chatId: string) {
   try {
-    const messages = await redis.get(`chat:${chatId}`);
-    if (messages) {
-      return JSON.parse(messages);
+    // Use LRANGE to get all messages from the Redis list
+    const messages = await redis.lrange(`chat:${chatId}`, 0, -1);
+    if (messages && messages.length > 0) {
+      // Reverse because we use LPUSH (newest first), but want chronological order
+      return messages.map(msg => msg);
     }
     return [];
   } catch (error) {
@@ -790,17 +801,29 @@ async function loadChat(chatId: string) {
     return [];
   }
 }
-import { createResumableStreamContext } from 'resumable-stream';
 
-const context = createResumableStreamContext({
-  waitUntil: async (fn) => {
-    await fn;
+async function appendMessagesToChat(chatId: string, newMessages: any[]) {
+  try {
+    // Use RPUSH to append messages in chronological order
+    for (const message of newMessages) {
+      await redis.rpush(`chat:${chatId}`, JSON.stringify(message));
+    }
+    console.log(`Appended ${newMessages.length} messages to chat ${chatId}`);
+  } catch (error) {
+    console.error('Error appending messages to chat:', error);
+    throw error;
   }
-});
+}
+
+// const streamContext = createResumableStreamContext({
+//   waitUntil: async (fn) => {
+//     await fn;
+//   }
+// });
 
 async function startServer() {
   // Initialize Redis first
-  await initializeRedis();
+  // await initializeRedis();
 
   const server = serve({
     idleTimeout: 200,
@@ -810,8 +833,14 @@ async function startServer() {
 
       "/api/chat/new": {
         async POST(req) {
-          const chatId = crypto.randomUUID();
-          await redis.set(`chat:${chatId}`, JSON.stringify([]));
+          const chatId = generateId(); // generate a unique chat ID
+
+          // const { messages } = await req.json();
+
+          // No need to initialize empty list, Redis lists start empty
+          // Just ensure the chat ID is valid by setting an expiry metadata
+          await redis.set(`chat:${chatId}:meta`, JSON.stringify({ created: new Date().toISOString() }));
+          // await appendMessagesToChat(chatId, messages);
           return Response.json({ chatId });
         }
       },
@@ -822,7 +851,7 @@ async function startServer() {
           const { searchParams } = new URL(req.url);
           const chatId = searchParams.get('chatId');
 
-
+          console.log("chatId", chatId);
 
           if (chatId) {
             return Response.json(await loadChat(chatId));
@@ -832,7 +861,10 @@ async function startServer() {
         async POST(req) {
           try {
             const body = await req.json();
-            const { messages } = body;
+            console.log("body", body);
+            const { messages, id } = body;
+
+            console.log("the chatId", id);
 
             if (!messages) {
               return Response.json(
@@ -841,15 +873,44 @@ async function startServer() {
               );
             }
 
+            const streamId = generateId();
+
+            // await appendStreamId({ chatId, streamId });
+
             // console.log(messages);
+
+            // Check for new messages that need to be saved
+            const existingMessages = (await loadChat(id)) ?? [];
+            const newUserMessages = messages?.slice(existingMessages.length) ?? [];
+
+            console.log("newUserMessages", existingMessages);
+            
+            // Save any new user messages first
+            if (newUserMessages.length > 0) {
+              await appendMessagesToChat(id, newUserMessages);
+            }
 
             const stream = createUIMessageStream({
               execute: ({ writer }) => {
                 writer.merge(createAIStream(messages, writer).toUIMessageStream())
+              },
+              onFinish: async (message) => {
+                console.log("onFinish", message);
+                // Only append the AI's response messages, not the entire conversation
+                await appendMessagesToChat(id, message.messages);
               }
             })
 
+            // await consumeStream({ stream })
+
             return createUIMessageStreamResponse({ stream })
+
+            // const resumableStream = await streamContext.resumableStream(
+            //   streamId,
+            //   () => ,
+            // );
+
+            // return createUIMessageStreamResponse({ stream: resumableStream })
           } catch (error) {
             console.error('Agent error:', error);
             return Response.json(

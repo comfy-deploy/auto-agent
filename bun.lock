@@ -24,7 +24,6 @@
         "react-hook-form": "^7.54.2",
         "redis": "^5.6.1",
         "redis-memory-server": "^0.12.1",
-        "resumable-stream": "^2.2.1",
         "tailwind-merge": "^3.0.1",
         "tailwindcss": "^4.0.6",
         "tailwindcss-animate": "^1.0.7",
@@ -310,8 +309,6 @@
     "redis": ["redis@5.6.1", "", { "dependencies": { "@redis/bloom": "5.6.1", "@redis/client": "5.6.1", "@redis/json": "5.6.1", "@redis/search": "5.6.1", "@redis/time-series": "5.6.1" } }, "sha512-O9DwAvcBm/lrlkGE0A6gNBtUdA8J9oD9njeLYlLzmm+MGTR7nd7VkpspfXqeXFg3gm89zldDqckyaHhXfhY80g=="],
 
     "redis-memory-server": ["redis-memory-server@0.12.1", "", { "dependencies": { "camelcase": "^6.3.0", "cross-spawn": "^7.0.3", "debug": "^4.3.4", "extract-zip": "^2.0.1", "find-cache-dir": "^3.3.2", "find-package-json": "^1.2.0", "get-port": "^5.1.1", "https-proxy-agent": "^7.0.0", "lockfile": "^1.0.4", "lodash.defaultsdeep": "^4.6.1", "rimraf": "^5.0.1", "semver": "^7.5.3", "tar": "^6.1.15", "tmp": "^0.2.1", "uuid": "^8.3.2" }, "bin": { "redis-memory-server": "bin/index.js" } }, "sha512-4FKR5ToyrAVTVbHd56WWqpM6JgCPEztyCQ76JW1338ENGKzfnixqU1dFvmwE2FMkeQbn9jt29cMENOZSvB551g=="],
-
-    "resumable-stream": ["resumable-stream@2.2.1", "", {}, "sha512-8UOWqA+KjAOaZeeZa38lIhbNGM1B6ygO2QTi1BNcVO9vemQz1M0f2qVsnHqSnsLpJLfmOWNwq64TmBtOJxjCeQ=="],
 
     "rimraf": ["rimraf@5.0.10", "", { "dependencies": { "glob": "^10.3.7" }, "bin": { "rimraf": "dist/esm/bin.mjs" } }, "sha512-l0OE8wL34P4nJH/H2ffoaniAokM2qSmrtXHmlpvYr5AVVX8msAyW0l8NVJFDxlSK4u3Uh/f41cQheDVdnYijwQ=="],
 
