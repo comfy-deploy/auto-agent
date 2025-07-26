@@ -19,7 +19,7 @@ export function Chat(props: {
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
     id: props.chatId,
-    // resume: true,
+    // resume: props.chatId ? true : false,
   });
 
   useEffect(() => {
@@ -45,11 +45,29 @@ export function Chat(props: {
     }
   });
 
+  const resumed = useRef(false);
+
+  // Check if the last message is from the user
+  const lastMessage = messages[messages.length - 1];
+  const isLastMessageFromUser = lastMessage?.role === "user";
+
+  console.log(messages);
+  console.log("Last message is from user:", isLastMessageFromUser);
+
   useEffect(() => {
-    // resumeStream();
+    if (!props.chatId) return;
+
+    if (!isLastMessageFromUser) {
+      return;
+    }
+
+    if (!resumed.current) {
+      resumeStream();
+      resumed.current = true;
+    }
     // We want to disable the exhaustive deps rule here because we only want to run this effect once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isLastMessageFromUser]);
 
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
@@ -159,7 +177,6 @@ export function Chat(props: {
 
   const isLoading = status !== "ready";
 
-  console.log(messages);
 
   return (
     <div className="h-full flex flex-col bg-background">

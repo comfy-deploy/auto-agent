@@ -1,4 +1,4 @@
-import { RedisClient, serve, spawn } from "bun";
+import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
@@ -7,6 +7,75 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 
 // Initialize Redis asynchronously
+
+export const MessageType = {
+  CHUNK: "chunk",
+  METADATA: "metadata",
+  EVENT: "event",
+  ERROR: "error",
+} as const;
+
+export const StreamStatus = {
+  STARTED: "started",
+  STREAMING: "streaming",
+  COMPLETED: "completed",
+  ERROR: "error",
+} as const;
+
+export const baseMessageSchema = z.object({
+  type: z.enum([
+    MessageType.CHUNK,
+    MessageType.METADATA,
+    MessageType.EVENT,
+    MessageType.ERROR,
+  ]),
+});
+
+export const chunkMessageSchema = baseMessageSchema.extend({
+  type: z.literal(MessageType.CHUNK),
+  content: z.any(),
+});
+
+export const metadataMessageSchema = baseMessageSchema.extend({
+  type: z.literal(MessageType.METADATA),
+  status: z.enum([
+    StreamStatus.STARTED,
+    StreamStatus.STREAMING,
+    StreamStatus.COMPLETED,
+    StreamStatus.ERROR,
+  ]),
+  completedAt: z.string().optional(),
+  totalChunks: z.number().optional(),
+  fullContent: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const eventMessageSchema = baseMessageSchema.extend({
+  type: z.literal(MessageType.EVENT),
+});
+
+export const errorMessageSchema = baseMessageSchema.extend({
+  type: z.literal(MessageType.ERROR),
+  error: z.string(),
+});
+
+export const messageSchema = z.discriminatedUnion("type", [
+  chunkMessageSchema,
+  metadataMessageSchema,
+  eventMessageSchema,
+  errorMessageSchema,
+]);
+
+export type Message = z.infer<typeof messageSchema>;
+export type ChunkMessage = z.infer<typeof chunkMessageSchema>;
+export type MetadataMessage = z.infer<typeof metadataMessageSchema>;
+export type EventMessage = z.infer<typeof eventMessageSchema>;
+export type ErrorMessage = z.infer<typeof errorMessageSchema>;
+
+export const validateMessage = (data: unknown): Message | null => {
+  const result = messageSchema.safeParse(data);
+  return result.success ? result.data : null;
+};
 
 let redis: Redis;
 
@@ -744,10 +813,10 @@ async function createVercelToolsFromModels(models: any[]) {
 async function createDefaultModelTools() {
   try {
     console.log('🔧 Creating tools from defaultModels...');
-    
+
     // Extract all models from defaultModels with their category information
     const allModels: any[] = [];
-    
+
     for (const [category, models] of Object.entries(defaultModels)) {
       for (const [modelId, description] of Object.entries(models)) {
         allModels.push({
@@ -759,15 +828,15 @@ async function createDefaultModelTools() {
         });
       }
     }
-    
+
     console.log(`📋 Found ${allModels.length} models in defaultModels:`, allModels.map(m => m.id));
-    
+
     // Create tools for all models
     const tools = await createVercelToolsFromModels(allModels);
-    
+
     console.log(`✅ Successfully created ${Object.keys(tools).length} tools from defaultModels`);
     return tools;
-    
+
   } catch (error) {
     console.error('❌ Error creating tools from defaultModels:', error);
     return {};
@@ -782,35 +851,35 @@ const DEFAULT_TOOLS_CACHE_TTL = 300000; // 5 minutes in milliseconds
 // Helper function to get cached default model tools
 async function getCachedDefaultModelTools() {
   const now = Date.now();
-  
+
   // Return cached tools if they exist and are still fresh
   if (defaultModelToolsCache && (now - defaultModelToolsCacheTime) < DEFAULT_TOOLS_CACHE_TTL) {
     console.log('🎯 Using cached default model tools');
     return defaultModelToolsCache;
   }
-  
+
   // Create fresh tools and cache them
   console.log('🔄 Refreshing default model tools cache');
   defaultModelToolsCache = await createDefaultModelTools();
   defaultModelToolsCacheTime = now;
-  
+
   return defaultModelToolsCache;
 }
 
 // Utility function to get the default model tools mapping
 export async function getDefaultModelToolsMapping() {
   const tools = await getCachedDefaultModelTools();
-  
+
   // Create a structured mapping that shows the relationship between defaultModels and tools
   const mapping: Record<string, Record<string, any>> = {};
-  
+
   for (const [category, models] of Object.entries(defaultModels)) {
     mapping[category] = {};
-    
+
     for (const [modelId, description] of Object.entries(models)) {
       const toolName = modelId.replace(/[^a-zA-Z0-9_]/g, '_');
       const tool = tools[toolName];
-      
+
       mapping[category][modelId] = {
         description,
         toolName,
@@ -819,7 +888,7 @@ export async function getDefaultModelToolsMapping() {
       };
     }
   }
-  
+
   return {
     mapping,
     tools,
@@ -861,9 +930,9 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
     console.log("Searching fal.ai models for:", prompt);
 
     const searchedTools = await createVercelToolsFromModels(await searchFalModels(prompt, 3, writer))
-    
+
     // Merge tools, giving priority to searched tools (more specific to the prompt)
-    
+
     // console.log(`🔧 Using ${Object.keys(allTools).length} total tools (${Object.keys(defaultTools).length} default + ${Object.keys(searchedTools).length} searched)`);
 
     const stream = await streamText({
@@ -888,10 +957,10 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
   }),
   execute: async ({ prompt, category = 'any' }, { toolCallId }) => {
     console.log(`Using default fal.ai models for: ${prompt} (category: ${category})`);
-    
+
     // Get default model tools
     const defaultTools = await getCachedDefaultModelTools();
-    
+
     // Filter tools by category if specified
     let filteredTools = defaultTools;
     if (category !== 'any') {
@@ -907,7 +976,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
           return acc;
         }, {} as any);
     }
-    
+
     console.log(`🎯 Using ${Object.keys(filteredTools).length} default model tools for category: ${category}`);
 
     const stream = await streamText({
@@ -1004,6 +1073,35 @@ async function appendMessagesToChat(chatId: string, newMessages: any[]) {
 //   }
 // });
 
+async function appendStreamId(streamId: string, id: string) {
+  // Set TTL for 24 hours (86400 seconds)
+  await redis.setex(`stream:${streamId}`, 86400, id);
+  // Also store the latest stream for this chat with TTL
+  await redis.setex(`chat:${id}:latest_stream`, 86400, streamId);
+  // Optionally, keep a list of all streams for this chat
+  await redis.lpush(`chat:${id}:streams`, streamId);
+  // Set TTL for the streams list
+  await redis.expire(`chat:${id}:streams`, 86400);
+}
+
+type StreamField = string
+type StreamMessage = [string, StreamField[]]
+type StreamData = [string, StreamMessage[]]
+
+const json = (data: Record<string, unknown>) => {
+  return new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`)
+}
+
+const arrToObj = (arr: StreamField[]) => {
+  const obj: Record<string, string> = {}
+
+  for (let i = 0; i < arr.length; i += 2) {
+    obj[arr[i]] = arr[i + 1]
+  }
+
+  return obj
+}
+
 async function startServer() {
   // Initialize Redis first
   // await initializeRedis();
@@ -1058,7 +1156,7 @@ async function startServer() {
 
             const streamId = generateId();
 
-            // await appendStreamId({ id, streamId });
+            await appendStreamId(streamId, id);
 
             // console.log(messages);
 
@@ -1074,24 +1172,90 @@ async function startServer() {
             }
 
             const stream = createUIMessageStream({
-              execute: ({ writer }) => {
+              execute: async ({ writer }) => {
+                // writer.write({
+                //   type: "start-step",
+                // });
+                // for (let i = 0; i < 1000000; i++) {
+                //   writer.write({
+                //     type: "text-start",
+                //     id: "123" + i,
+                //   });
+                //   writer.write({
+                //     type: "text-delta",
+                //     delta: "Hello",
+                //     id: "123" + i,
+                //   });
+                //   writer.write({
+                //     type: "text-end",
+                //     id: "123" + i,
+                //   });
+                //   await new Promise(resolve => setTimeout(resolve, 1000));
+                // }
                 writer.merge(createAIStream(messages, writer).toUIMessageStream())
               },
               onFinish: async (message) => {
                 console.log("onFinish", message);
                 // Only append the AI's response messages, not the entire conversation
                 await appendMessagesToChat(id, message.messages);
+
+                // Mark stream as completed
+                const streamId = await redis.get(`chat:${id}:latest_stream`) as string;
+                if (streamId) {
+                  const completedMessage: MetadataMessage = {
+                    type: MessageType.METADATA,
+                    status: StreamStatus.COMPLETED,
+                    completedAt: new Date().toISOString(),
+                  };
+
+                  await redis.xadd(streamId, "*", completedMessage);
+                  await redis.publish(streamId, JSON.stringify({ type: MessageType.METADATA, status: StreamStatus.COMPLETED }));
+                  // Set TTL for stream status to 24 hours (86400 seconds)
+                  await redis.setex(`stream:${streamId}:status`, 86400, "DONE");
+                  // Ensure the stream itself has TTL set
+                  await redis.expire(streamId, 86400);
+                }
               }
             })
 
-            // const resumableStream = await streamContext.resumableStream(
-            //   streamId,
-            //   () => stream,
-            // );
+            // Create a tee to read the stream while also returning it
+            const [streamForReading, streamForResponse] = stream.tee();
 
-            // await consumeStream({ stream })
+            // Process chunks from one branch of the stream
+            (async () => {
+              try {
+                const reader = streamForReading.getReader();
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
 
-            return createUIMessageStreamResponse({ stream })
+                  if (value) {
+                    // UI message chunks are structured objects, convert to JSON for storage
+                    const chunkContent = JSON.stringify(value);
+
+                    const chunkMessage: ChunkMessage = {
+                      type: MessageType.CHUNK,
+                      content: chunkContent,
+                    }
+
+                    // 👇 write chunk to redis stream
+                    // console.log("writing chunk to redis stream", streamId);
+                    await redis.xadd(streamId, "*", chunkMessage)
+
+                    // Set TTL for the stream key (24 hours = 86400 seconds)
+                    await redis.expire(streamId, 86400)
+
+                    // 👇 alert consumer that there's a new chunk
+                    await redis.publish(streamId, JSON.stringify({ type: MessageType.CHUNK }))
+                  }
+                }
+                reader.releaseLock();
+              } catch (error) {
+                console.error('Error processing stream chunks:', error);
+              }
+            })();
+
+            return createUIMessageStreamResponse({ stream: streamForResponse })
 
             // const resumableStream = await streamContext.resumableStream(
             //   streamId,
@@ -1107,6 +1271,156 @@ async function startServer() {
             );
           }
         },
+      },
+
+      "/api/chat/:chatId/stream": {
+        async GET(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            const streamId = await redis.get(`chat:${chatId}:latest_stream`) as string;
+
+            if (!streamId) {
+              return Response.json(
+                { error: "Stream does not exist" },
+                { status: 404 }
+              )
+            }
+
+            console.log("streamId", streamId);
+
+            const streamKey = `${streamId}`
+            const groupName = `sse-group-${generateId()}`
+
+            const keyExists = await redis.exists(streamKey)
+
+            if (!keyExists) {
+              return Response.json(
+                { error: "Stream does not exist" },
+                { status: 404 }
+              )
+            }
+
+            try {
+              await redis.xgroup(streamKey, {
+                type: "CREATE",
+                group: groupName,
+                id: "0",
+              })
+            } catch (_err) { }
+
+            const response = new Response(
+              new ReadableStream({
+                async start(controller) {
+                  let isClosed = false;
+
+                  const safeEnqueue = (data: any) => {
+                    if (!isClosed) {
+                      try {
+                        controller.enqueue(data);
+                      } catch (error) {
+                        console.error("Error enqueuing data:", error);
+                        isClosed = true;
+                      }
+                    }
+                  };
+
+                  const safeClose = () => {
+                    if (!isClosed) {
+                      try {
+                        controller.close();
+                        isClosed = true;
+                      } catch (error) {
+                        console.error("Error closing controller:", error);
+                      }
+                    }
+                  };
+
+                  const readStreamMessages = async () => {
+                    try {
+                      const chunks = (await redis.xreadgroup(
+                        groupName,
+                        `consumer-1`,
+                        streamKey,
+                        ">"
+                      )) as StreamData[]
+
+                      // console.log("chunks", chunks);
+
+                      if (chunks?.length > 0) {
+                        const [_streamKey, messages] = chunks[0]
+                        for (const [_messageId, fields] of messages) {
+                          const rawObj = arrToObj(fields)
+                          const validatedMessage = validateMessage(rawObj)
+
+                          // console.log("validatedMessage", validatedMessage);
+
+                          if (validatedMessage?.type === MessageType.CHUNK) {
+                            safeEnqueue(json(validatedMessage.content))
+                          } else if (validatedMessage?.type === MessageType.METADATA) {
+                            if (validatedMessage.status === StreamStatus.COMPLETED || validatedMessage.status === StreamStatus.ERROR) {
+                              safeClose()
+                            }
+                          } else {
+                            console.log("not a chunk", validatedMessage);
+                          }
+                        }
+                      }
+                    } catch (error) {
+                      console.error("Error reading stream messages:", error);
+                    }
+                  }
+
+                  await readStreamMessages()
+
+                  const subscription = redis.subscribe(streamKey)
+
+                  subscription.on("message", async () => {
+                    try {
+                      await readStreamMessages()
+                    } catch (error) {
+                      console.error("Error in message handler:", error);
+                    }
+                  })
+
+                  subscription.on("error", (error) => {
+                    console.error(`SSE subscription error on ${streamKey}:`, error)
+
+                    const errorMessage: ErrorMessage = {
+                      type: MessageType.ERROR,
+                      error: error.message,
+                    }
+
+                    safeEnqueue(json(errorMessage))
+                    safeClose()
+                  })
+
+                  req.signal.addEventListener("abort", () => {
+                    console.log("Client disconnected, cleaning up subscription")
+                    subscription.unsubscribe()
+                    safeClose()
+                  })
+                },
+              }),
+              {
+                headers: {
+                  "Content-Type": "text/event-stream",
+                  "Cache-Control": "no-cache, no-transform",
+                  Connection: "keep-alive",
+                },
+              }
+            )
+
+            return response
+          } catch (error) {
+            console.error('Error in stream route:', error);
+            return Response.json(
+              { error: "Failed to process request" },
+              { status: 500 }
+            );
+          }
+        }
       },
     },
 
