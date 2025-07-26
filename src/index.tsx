@@ -4,6 +4,7 @@ import { convertToModelMessages, createUIMessageStream, createUIMessageStreamRes
 import { z } from "zod";
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
+// import { createResumableStreamContext } from 'resumable-stream/ioredis';
 
 // Initialize Redis asynchronously
 
@@ -22,9 +23,25 @@ let redis: Redis;
 redis = Redis.fromEnv()
 console.log(`🗄️  Redis initialized successfully`);
 
-// async function initializeRedis() {
+const defaultModels = {
+  image: {
+    "fal-ai/flux/dev": "State of the art image generation model",
+    "fal-ai/flux/schnell": "Fast image generation model",
+  },
+  image_editing: {
+    "fal-ai/flux-kontext": "Complex image generation model",
+  },
+  video: {
+    "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
+    "fal-ai/luma-dream-machine": "High quality video generation model",
+  },
+  upscaling: {
+    "fal-ai/clarity-upscaler": "High quality upscaling model",
+    "fal-ai/real-esrgan": "High quality upscaling model",
+  },
+}
 
-// }
+
 
 import Exa from 'exa-js';
 import { fal } from "@fal-ai/client";
@@ -218,11 +235,15 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
       }
     };
 
+    // console.log("params", params);
+
     const encodedParams = encodeURIComponent(JSON.stringify(params));
     const falApiUrl = `https://fal.ai/api/trpc/models.list?batch=1&input=${encodedParams}`;
 
     const response = await fetch(falApiUrl);
     const data = await response.json();
+
+    // console.log("data", data);
 
     // Extract and filter models
     const models = data[0]?.result?.data?.json?.items || [];
@@ -280,6 +301,8 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
       };
     });
 
+    // console.log("scoredModels", scoredModels);
+
     // Initial filtering and sorting
     const filteredModels = scoredModels
       .filter((model: any) =>
@@ -293,25 +316,25 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
     // If we have good quality models, try LLM selection, otherwise use simple ranking
     let selectedModels: any[];
 
-    if (filteredModels.length >= 3) {
-      try {
-        // Try LLM selection with improved error handling
-        selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput, writer);
-      } catch (error) {
-        console.warn('🔄 LLM selection failed, using quality-based ranking');
-        selectedModels = filteredModels
-          .filter(model => !model.requiresImage || hasImageInput)
-          .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
-          .slice(0, maxResults);
-      }
-    } else {
-      // Not enough candidates for LLM selection, use simple ranking
-      console.log('📊 Using simple quality ranking (insufficient candidates for LLM selection)');
-      selectedModels = filteredModels
-        .filter(model => !model.requiresImage || hasImageInput)
-        .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
-        .slice(0, maxResults);
-    }
+    // if (filteredModels.length >= 3) {
+    //   try {
+    //     // Try LLM selection with improved error handling
+    //     selectedModels = await selectBestModelWithLLM(userQuery, filteredModels, hasImageInput, writer);
+    //   } catch (error) {
+    //     console.warn('🔄 LLM selection failed, using quality-based ranking');
+    //     selectedModels = filteredModels
+    //       .filter(model => !model.requiresImage || hasImageInput)
+    //       .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
+    //       .slice(0, maxResults);
+    //   }
+    // } else {
+    // Not enough candidates for LLM selection, use simple ranking
+    console.log('📊 Using simple quality ranking (insufficient candidates for LLM selection)');
+    selectedModels = filteredModels
+      .filter(model => !model.requiresImage || hasImageInput)
+      .sort((a: any, b: any) => b.qualityScore - a.qualityScore)
+      .slice(0, maxResults);
+    // }
 
     // Final fallback - ensure we always return something useful
     if (selectedModels.length === 0) {
@@ -331,6 +354,8 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
 
     // Take the requested number of results
     const finalModels = selectedModels.slice(0, maxResults);
+
+    console.log(finalModels);
 
     // Check if user is asking for image editing but hasn't provided an image
     const isAskingForImageEditing = /\b(edit|modify|enhance|upscale|improve|fix|restore|colorize|remove|add.*to|change.*in)\b/i.test(userQuery) &&
@@ -355,6 +380,8 @@ async function searchFalModels(userQuery: string, maxResults: number = 3, writer
         console.log(`   - ${model.id} (${model.title})`);
       });
     }
+
+    console.log("finalModels", finalModels);
 
     return finalModels.map((model: any) => ({
       id: model.id,
@@ -382,12 +409,13 @@ async function fetchModelOpenAPI(modelId: string) {
     try {
       const cachedValue = await redis.get(cacheKey);
       if (cachedValue) {
-        const cachedSpec = JSON.parse(cachedValue);
+        const cachedSpec = cachedValue;
         console.log(`🎯 Cache hit for OpenAPI spec: ${modelId}`);
         return cachedSpec;
       }
     } catch (cacheError) {
       console.warn('Redis get error:', cacheError);
+      throw cacheError;
     }
 
     console.log(`🌐 Fetching OpenAPI spec for: ${modelId}`);
@@ -712,6 +740,94 @@ async function createVercelToolsFromModels(models: any[]) {
   return mergedTools;
 }
 
+// Helper function to create Vercel AI tools from defaultModels
+async function createDefaultModelTools() {
+  try {
+    console.log('🔧 Creating tools from defaultModels...');
+    
+    // Extract all models from defaultModels with their category information
+    const allModels: any[] = [];
+    
+    for (const [category, models] of Object.entries(defaultModels)) {
+      for (const [modelId, description] of Object.entries(models)) {
+        allModels.push({
+          id: modelId,
+          title: modelId.split('/').pop() || modelId, // Extract model name from ID
+          category: category,
+          description: description,
+          url: `https://fal.ai/models/${modelId}`,
+        });
+      }
+    }
+    
+    console.log(`📋 Found ${allModels.length} models in defaultModels:`, allModels.map(m => m.id));
+    
+    // Create tools for all models
+    const tools = await createVercelToolsFromModels(allModels);
+    
+    console.log(`✅ Successfully created ${Object.keys(tools).length} tools from defaultModels`);
+    return tools;
+    
+  } catch (error) {
+    console.error('❌ Error creating tools from defaultModels:', error);
+    return {};
+  }
+}
+
+// Cache for default model tools to avoid refetching on every request
+let defaultModelToolsCache: any = null;
+let defaultModelToolsCacheTime: number = 0;
+const DEFAULT_TOOLS_CACHE_TTL = 300000; // 5 minutes in milliseconds
+
+// Helper function to get cached default model tools
+async function getCachedDefaultModelTools() {
+  const now = Date.now();
+  
+  // Return cached tools if they exist and are still fresh
+  if (defaultModelToolsCache && (now - defaultModelToolsCacheTime) < DEFAULT_TOOLS_CACHE_TTL) {
+    console.log('🎯 Using cached default model tools');
+    return defaultModelToolsCache;
+  }
+  
+  // Create fresh tools and cache them
+  console.log('🔄 Refreshing default model tools cache');
+  defaultModelToolsCache = await createDefaultModelTools();
+  defaultModelToolsCacheTime = now;
+  
+  return defaultModelToolsCache;
+}
+
+// Utility function to get the default model tools mapping
+export async function getDefaultModelToolsMapping() {
+  const tools = await getCachedDefaultModelTools();
+  
+  // Create a structured mapping that shows the relationship between defaultModels and tools
+  const mapping: Record<string, Record<string, any>> = {};
+  
+  for (const [category, models] of Object.entries(defaultModels)) {
+    mapping[category] = {};
+    
+    for (const [modelId, description] of Object.entries(models)) {
+      const toolName = modelId.replace(/[^a-zA-Z0-9_]/g, '_');
+      const tool = tools[toolName];
+      
+      mapping[category][modelId] = {
+        description,
+        toolName,
+        tool: tool ? 'Available' : 'Not Available',
+        url: `https://fal.ai/models/${modelId}`,
+      };
+    }
+  }
+  
+  return {
+    mapping,
+    tools,
+    totalModels: Object.values(defaultModels).reduce((acc, models) => acc + Object.keys(models).length, 0),
+    availableTools: Object.keys(tools).length,
+  };
+}
+
 export const webSearch = tool({
   description: 'Search the web for up-to-date information',
   inputSchema: z.object({
@@ -743,40 +859,107 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
   }),
   execute: async ({ prompt }, { toolCallId }) => {
     console.log("Searching fal.ai models for:", prompt);
-    const tools = await createVercelToolsFromModels(await searchFalModels(prompt, 5, writer));
+
+    const searchedTools = await createVercelToolsFromModels(await searchFalModels(prompt, 3, writer))
+    
+    // Merge tools, giving priority to searched tools (more specific to the prompt)
+    
+    // console.log(`🔧 Using ${Object.keys(allTools).length} total tools (${Object.keys(defaultTools).length} default + ${Object.keys(searchedTools).length} searched)`);
 
     const stream = await streamText({
       model: "anthropic/claude-4-sonnet",
       system: `You are a creative agent. The agent has decided to use the following tools to create the user's prompt. Some tools might require image_url, make sure to only use those when you have existing images`,
       prompt: prompt,
       maxRetries: 3,
-      tools,
+      tools: searchedTools,
     })
 
     writer.merge(stream.toUIMessageStream());
 
-    return Object.keys(tools);
+    return Object.keys(searchedTools);
+  }
+});
+
+export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) => tool({
+  description: "Use predefined high-quality fal.ai models for image generation, video creation, and upscaling",
+  inputSchema: z.object({
+    prompt: z.string(),
+    category: z.enum(['image', 'image_editing', 'video', 'upscaling', 'any']).optional().describe('Preferred model category, defaults to any'),
+  }),
+  execute: async ({ prompt, category = 'any' }, { toolCallId }) => {
+    console.log(`Using default fal.ai models for: ${prompt} (category: ${category})`);
+    
+    // Get default model tools
+    const defaultTools = await getCachedDefaultModelTools();
+    
+    // Filter tools by category if specified
+    let filteredTools = defaultTools;
+    if (category !== 'any') {
+      filteredTools = Object.keys(defaultTools)
+        .filter(toolName => {
+          // Extract original model ID from tool name and check if it's in the specified category
+          const originalModelId = Object.keys(defaultModels[category as keyof typeof defaultModels] || {})
+            .find(modelId => toolName.includes(modelId.replace(/[^a-zA-Z0-9_]/g, '_')));
+          return !!originalModelId;
+        })
+        .reduce((acc, toolName) => {
+          acc[toolName] = defaultTools[toolName];
+          return acc;
+        }, {} as any);
+    }
+    
+    console.log(`🎯 Using ${Object.keys(filteredTools).length} default model tools for category: ${category}`);
+
+    const stream = await streamText({
+      model: "anthropic/claude-4-sonnet",
+      system: `You are a creative agent using high-quality predefined models. You have access to these categories:
+      - Image generation: flux/dev, flux/schnell (fast and high quality)
+      - Image editing: flux-kontext (complex prompts and context)
+      - Video generation: runway-gen3/turbo, luma-dream-machine
+      - Upscaling: clarity-upscaler, real-esrgan
+      
+      Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.`,
+      prompt: prompt,
+      maxRetries: 3,
+      tools: filteredTools,
+    })
+
+    writer.merge(stream.toUIMessageStream());
+
+    await consumeStream({ stream: stream.fullStream })
+
+    return Object.keys(filteredTools);
   }
 });
 
 function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   return streamText({
     model: "anthropic/claude-4-sonnet",
-    system: `You are a creative agent.
-    1. You are given a message from a user.
-    2. Help the user to plan our their creative goal, until you feel confident that you have a good understanding of their goal, if its not clear, try looking it up with websearch.
-    3. Once you have a good understanding of the user's goal, you will need to select the best tool to use.
-    4. You will then need to call the tool with the appropriate parameters. And if the task is complicated, plan multiple steps and call the tool multiple times.
-    5. You will then return the result of the tool call.
-    6. You will also need to return the tool that was used.
-    7. You will also need to return the parameters that were used.
-    8. You will also need to return the result of the tool call.
-    `,
+    system: `You are a creative agent with access to multiple fal.ai model tools:
+
+    1. **default_models**: Use predefined high-quality models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
+    2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
+    3. **webSearch**: Search the web for up-to-date information
+
+    **Guidelines:**
+    1. Help the user plan their creative goal until you understand it clearly
+    2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
+    3. For specialized or unusual requests, use **model_search** to find specific models
+    4. If unclear about the request, use **webSearch** first
+    5. Plan multiple steps for complex tasks and execute them systematically
+    6. Always choose the most appropriate tool for the task
+
+    **Default Model Categories:**
+    - Image: flux/dev (best quality), flux/schnell (fastest)
+    - Image Editing: flux-kontext (complex prompts)
+    - Video: runway-gen3/turbo (fast), luma-dream-machine (high quality)
+    - Upscaling: clarity-upscaler, real-esrgan`,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
     maxRetries: 3,
     tools: {
       webSearch,
+      default_models: defaultFalTools(writer),
       model_search: falTools(writer),
     },
   });
@@ -875,7 +1058,7 @@ async function startServer() {
 
             const streamId = generateId();
 
-            // await appendStreamId({ chatId, streamId });
+            // await appendStreamId({ id, streamId });
 
             // console.log(messages);
 
@@ -884,7 +1067,7 @@ async function startServer() {
             const newUserMessages = messages?.slice(existingMessages.length) ?? [];
 
             console.log("newUserMessages", existingMessages);
-            
+
             // Save any new user messages first
             if (newUserMessages.length > 0) {
               await appendMessagesToChat(id, newUserMessages);
@@ -900,6 +1083,11 @@ async function startServer() {
                 await appendMessagesToChat(id, message.messages);
               }
             })
+
+            // const resumableStream = await streamContext.resumableStream(
+            //   streamId,
+            //   () => stream,
+            // );
 
             // await consumeStream({ stream })
 
