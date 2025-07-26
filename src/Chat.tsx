@@ -5,6 +5,7 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation } from "@tanstack/react-query";
+import { MediaItem } from "@/components/MediaItem";
 
 export function Chat(props: {
   initialMessages: UIMessage[];
@@ -71,6 +72,7 @@ export function Chat(props: {
 
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
+  const [selectedMediaItem, setSelectedMediaItem] = useState<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number } | null>(null);
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,6 +104,32 @@ export function Chat(props: {
   };
 
   const mediaItems = getAllMediaItems();
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: Event) => {
+      const keyboardEvent = e as globalThis.KeyboardEvent;
+      if (keyboardEvent.key === 'Escape' && selectedMediaItem) {
+        setSelectedMediaItem(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedMediaItem]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (selectedMediaItem) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedMediaItem]);
 
   // Auto-collapse completed tools (only once when they first complete)
   useEffect(() => {
@@ -288,30 +316,29 @@ export function Chat(props: {
                                       <div className="mt-2 grid grid-cols-1 gap-2">
                                         {(part as any).output.map((item: any, i: number) => (
                                           <div key={i} className="bg-white rounded border p-2">
-                                            {item.type === "image" ? (
-                                              <div>
-                                                <div className="font-medium text-gray-800 mb-1">🖼️ Image {i + 1}</div>
-                                                <img
-                                                  src={item.url}
-                                                  alt={`Generated image ${i + 1}`}
-                                                  className="max-w-full h-auto rounded border max-h-48 object-contain"
-                                                  style={{ maxWidth: '300px' }}
-                                                />
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                  {item.width} × {item.height}
-                                                </div>
-                                              </div>
-                                            ) : item.type === "video" ? (
-                                              <div>
-                                                <div className="font-medium text-gray-800 mb-1">🎥 Video {i + 1}</div>
-                                                <video
-                                                  src={item.url}
-                                                  controls
-                                                  className="max-w-full h-auto rounded border max-h-48"
-                                                  style={{ maxWidth: '300px' }}
-                                                />
-                                              </div>
-                                            ) : null}
+                                            <div className="font-medium text-gray-800 mb-1">
+                                              {item.type === "image" ? "🖼️" : "🎥"} {item.type === "image" ? "Image" : "Video"} {i + 1}
+                                            </div>
+                                            <MediaItem
+                                              item={{
+                                                id: `${message.id}-${partIndex}-${i}`,
+                                                type: item.type,
+                                                url: item.url,
+                                                width: item.width,
+                                                height: item.height
+                                              }}
+                                              className="max-w-full h-auto rounded border max-h-48 object-contain"
+                                              style={{ maxWidth: '300px' }}
+                                              showDimensions={item.type === "image"}
+                                              controls={item.type === "video"}
+                                              onClick={() => setSelectedMediaItem({
+                                                id: `${message.id}-${partIndex}-${i}`,
+                                                type: item.type,
+                                                url: item.url,
+                                                width: item.width,
+                                                height: item.height
+                                              })}
+                                            />
                                           </div>
                                         ))}
                                       </div>
@@ -402,37 +429,12 @@ export function Chat(props: {
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pt-2">
               {mediaItems.map((item) => (
                 <div key={item.id} className="flex-shrink-0 relative group rounded-lg overflow-hidden border hover:-translate-y-2 transition-transform duration-200 ease-out">
-                  {item.type === 'image' ? (
-                    <img
-                      src={item.url}
-                      alt="Generated image"
-                      className="h-16 w-16 object-cover bg-muted cursor-pointer"
-                      onClick={() => {
-                        // Open image in new tab for full view
-                        window.open(item.url, '_blank');
-                      }}
-                    />
-                  ) : (
-                    <div className="h-16 w-16 relative bg-muted overflow-hidden cursor-pointer"
-                      onClick={() => {
-                        // Open video in new tab for full view
-                        window.open(item.url, '_blank');
-                      }}>
-                      <video
-                        src={item.url}
-                        className="h-full w-full object-cover"
-                        muted
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                        <div className="w-4 h-4 border-l-2 border-white border-l-white/80 border-transparent ml-1"></div>
-                      </div>
-                    </div>
-                  )}
-                  {/* <div className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-4 h-4 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs">
-                      {item.type === 'image' ? '🖼️' : '🎥'}
-                    </div>
-                  </div> */}
+                  <MediaItem
+                    item={item}
+                    imageClassName="h-16 w-16 object-cover"
+                    onClick={() => setSelectedMediaItem(item)}
+                    muted={item.type === 'video'}
+                  />
                 </div>
               ))}
             </div>
@@ -489,6 +491,43 @@ export function Chat(props: {
           </div>
         </div>
       </div>
+
+      {/* Media Modal */}
+      {selectedMediaItem && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setSelectedMediaItem(null)}
+        >
+          <div 
+            className="relative max-w-[90vw] max-h-[90vh]  rounded-lg  overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setSelectedMediaItem(null)}
+              className="absolute top-2 right-2 z-10 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Media content */}
+            <MediaItem
+              item={selectedMediaItem}
+              className="max-w-full max-h-full object-contain"
+              style={{ 
+                maxWidth: '90vw', 
+                maxHeight: '90vh',
+                width: '100%',
+                height: '100%',
+                // minWidth: selectedMediaItem.width ? selectedMediaItem.width : '300px',
+                // minHeight: selectedMediaItem.height ? selectedMediaItem.height : '200px'
+              }}
+              controls={selectedMediaItem.type === 'video'}
+              autoPlay={selectedMediaItem.type === 'video'}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
