@@ -490,7 +490,11 @@ export function Chat(props: {
             </div>
           )}
 
-          <div className="">
+          <div className={
+            cn(
+              mediaItems.length == 0 ? "pt-2" : "pb-0",
+            )
+          }>
             <form onSubmit={(e) => {
               e.preventDefault();
               handleSubmit();
