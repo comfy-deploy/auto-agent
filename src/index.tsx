@@ -102,7 +102,7 @@ const defaultModels = {
   },
   video: {
     "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
-    "fal-ai/luma-dream-machine": "High quality video generation model",
+    "fal-ai/luma-dream-machine/image-to-video": "High quality video generation model",
   },
   upscaling: {
     "fal-ai/clarity-upscaler": "High quality upscaling model",

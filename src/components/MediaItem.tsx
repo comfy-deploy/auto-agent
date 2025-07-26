@@ -49,7 +49,7 @@ export function MediaItem({
                 {/* Shimmer skeleton loader */}
                 {(isLoading || !hasLoaded) && (
                     <div className="absolute inset-0 bg-muted animate-pulse rounded"
-
+                        style={style}
                     >
                         <div className="w-full h-full bg-gradient-to-r from-muted via-muted-foreground/10 to-muted bg-[length:200%_100%] animate-[shimmer_1.5s_ease-in-out_infinite] rounded"></div>
                     </div>

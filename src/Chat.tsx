@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, type FormEvent, type KeyboardEvent 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
@@ -105,18 +105,48 @@ export function Chat(props: {
 
   const mediaItems = getAllMediaItems();
 
-  // Handle escape key to close modal
+  // Handle keyboard navigation for modal
   useEffect(() => {
     const handleKeyDown = (e: Event) => {
       const keyboardEvent = e as globalThis.KeyboardEvent;
-      if (keyboardEvent.key === 'Escape' && selectedMediaItem) {
+      
+      if (!selectedMediaItem) return;
+      
+      if (keyboardEvent.key === 'Escape') {
         setSelectedMediaItem(null);
+        return;
+      }
+      
+      // Arrow key navigation
+      if (keyboardEvent.key === 'ArrowLeft' || keyboardEvent.key === 'ArrowRight') {
+        keyboardEvent.preventDefault();
+        
+        const currentIndex = mediaItems.findIndex(item => item.id === selectedMediaItem.id);
+        if (currentIndex === -1) return;
+        
+        let nextIndex;
+        if (keyboardEvent.key === 'ArrowLeft') {
+          // Go to previous item (cycle to end if at beginning)
+          nextIndex = currentIndex === 0 ? mediaItems.length - 1 : currentIndex - 1;
+        } else {
+          // Go to next item (cycle to beginning if at end)
+          nextIndex = currentIndex === mediaItems.length - 1 ? 0 : currentIndex + 1;
+        }
+        
+        const nextItem = mediaItems[nextIndex];
+        setSelectedMediaItem({
+          id: nextItem.id,
+          type: nextItem.type,
+          url: nextItem.url,
+          width: nextItem.width,
+          height: nextItem.height
+        });
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMediaItem]);
+  }, [selectedMediaItem, mediaItems]);
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -188,23 +218,43 @@ export function Chat(props: {
 
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      handleSubmit()
-      // e.preventDefault();
-      // if (promptInputRef.current?.value.trim()) {
-      //   sendMessage({
-      //     role: "user",
-      //     text: promptInputRef.current?.value,
-      //   });
-      //   promptInputRef.current.value = "";
-      // }
+    // Check for Enter without Cmd/Ctrl modifiers
+    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
     }
+    // Cmd+Enter or Ctrl+Enter allows new line (default behavior)
   };
 
 
   const isLoading = status !== "ready";
 
+  const downloadMedia = async (url: string, type: 'image' | 'video') => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      
+      // Create a temporary download link
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      
+      // Generate filename based on type and timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const extension = type === 'image' ? 'png' : 'mp4';
+      link.download = `${type}_${timestamp}.${extension}`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error('Failed to download media:', error);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -448,7 +498,7 @@ export function Chat(props: {
               <textarea
                 ref={promptInputRef}
                 name="prompt"
-                placeholder="What do you want to create? (Cmd+Enter to send)"
+                placeholder="What do you want to create? (Enter to send, Cmd+Enter for new line)"
                 onKeyDown={handleKeyDown}
                 disabled={isLoading}
                 rows={1}
@@ -502,24 +552,58 @@ export function Chat(props: {
             className="relative max-w-[90vw] max-h-[90vh]  rounded-lg  overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close button */}
-            <button
-              onClick={() => setSelectedMediaItem(null)}
-              className="absolute top-2 right-2 z-10 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {/* Action buttons */}
+            <div className="absolute top-2 right-2 z-10 flex gap-2">
+              {/* Download button */}
+              <button
+                onClick={() => downloadMedia(selectedMediaItem.url, selectedMediaItem.type)}
+                className="w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+              
+              {/* Close button */}
+              <button
+                onClick={() => setSelectedMediaItem(null)}
+                className="w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+                title="Close (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Navigation indicators */}
+            {mediaItems.length > 1 && (
+              <>
+                {/* Current item indicator */}
+                <div className="absolute top-2 left-2 z-10">
+                  <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
+                    {mediaItems.findIndex(item => item.id === selectedMediaItem.id) + 1} / {mediaItems.length}
+                  </div>
+                </div>
+
+                {/* Navigation hint */}
+                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-10">
+                  <div className="bg-black/50 text-white text-xs px-3 py-1 rounded flex items-center gap-2">
+                    <span>←</span>
+                    <span>Navigate</span>
+                    <span>→</span>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Media content */}
             <MediaItem
               item={selectedMediaItem}
               className="max-w-full max-h-full object-contain"
               style={{ 
-                maxWidth: '90vw', 
-                maxHeight: '90vh',
+                maxWidth: selectedMediaItem.width ? selectedMediaItem.width : '90vw', 
+                maxHeight: selectedMediaItem.height ? selectedMediaItem.height : '90vh',
                 width: '100%',
                 height: '100%',
-                // minWidth: selectedMediaItem.width ? selectedMediaItem.width : '300px',
+                // minWidth: ,
                 // minHeight: selectedMediaItem.height ? selectedMediaItem.height : '200px'
               }}
               controls={selectedMediaItem.type === 'video'}
