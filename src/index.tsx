@@ -1011,7 +1011,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     3. **webSearch**: Search the web for up-to-date information
 
     **Guidelines:**
-    1. Help the user plan their creative goal until you understand it clearly
+    1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
     2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
     3. For specialized or unusual requests, use **model_search** to find specific models
     4. If unclear about the request, use **webSearch** first
