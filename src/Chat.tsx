@@ -397,28 +397,23 @@ export function Chat(props: {
       {/* Input Area */}
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full">
         {/* Media Gallery */}
-        {mediaItems.length > 0 && (
-          <div className="px-6 py-2 border-t bg-background/95 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs text-muted-foreground font-medium">
-                Media ({mediaItems.length})
-              </span>
-            </div>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+        <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
+          {mediaItems.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pt-2">
               {mediaItems.map((item) => (
-                <div key={item.id} className="flex-shrink-0 relative group">
+                <div key={item.id} className="flex-shrink-0 relative group rounded-lg overflow-hidden border hover:-translate-y-2 transition-transform duration-200 ease-out">
                   {item.type === 'image' ? (
                     <img
                       src={item.url}
                       alt="Generated image"
-                      className="h-16 w-16 object-cover rounded border bg-muted hover:opacity-80 transition-opacity cursor-pointer"
+                      className="h-16 w-16 object-cover bg-muted cursor-pointer"
                       onClick={() => {
                         // Open image in new tab for full view
                         window.open(item.url, '_blank');
                       }}
                     />
                   ) : (
-                    <div className="h-16 w-16 relative rounded border bg-muted overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    <div className="h-16 w-16 relative bg-muted overflow-hidden cursor-pointer"
                       onClick={() => {
                         // Open video in new tab for full view
                         window.open(item.url, '_blank');
@@ -433,61 +428,65 @@ export function Chat(props: {
                       </div>
                     </div>
                   )}
-                  <div className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* <div className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <div className="w-4 h-4 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs">
                       {item.type === 'image' ? '🖼️' : '🎥'}
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               ))}
             </div>
+          )}
+
+          <div className="">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }} className="flex items-center gap-2">
+              <textarea
+                ref={promptInputRef}
+                name="prompt"
+                placeholder="What do you want to create? (Cmd+Enter to send)"
+                onKeyDown={handleKeyDown}
+                disabled={isLoading}
+                rows={1}
+                className={cn(
+                  "flex-1 min-h-[40px] max-h-[200px] bg-background",
+                  "border-input rounded-md px-3 py-2",
+                  "text-sm placeholder:text-muted-foreground",
+                  "focus-visible:outline-none ",
+                  "resize-none",
+                  isLoading && "opacity-50 cursor-not-allowed"
+                )}
+                style={{
+                  height: 'auto',
+                  minHeight: '40px'
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+                }}
+                required
+              />
+
+              <Button
+                type="submit"
+                className="rounded-full"
+                disabled={isLoading}
+                size="icon"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </>
+                ) : (
+                  <ArrowUp />
+                )}
+              </Button>
+            </form>
+
           </div>
-        )}
-
-        <div className="px-6 py-4">
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
-            <textarea
-              ref={promptInputRef}
-              name="prompt"
-              placeholder="Type your message here... (Cmd+Enter to send)"
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              rows={1}
-              className={cn(
-                "flex-1 min-h-[40px] max-h-[200px] bg-background",
-                "border border-input rounded-md px-3 py-2",
-                "text-sm placeholder:text-muted-foreground",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                "resize-none",
-                isLoading && "opacity-50 cursor-not-allowed"
-              )}
-              style={{
-                height: 'auto',
-                minHeight: '40px'
-              }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = 'auto';
-                target.style.height = Math.min(target.scrollHeight, 200) + 'px';
-              }}
-              required
-            />
-
-            <Button
-              type="submit"
-              disabled={isLoading}
-              size="sm"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                </>
-              ) : (
-                <ArrowUp />
-              )}
-            </Button>
-          </form>
-
         </div>
       </div>
     </div>
