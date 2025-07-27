@@ -57,7 +57,7 @@ export function App() {
   }
 
   return (
-    <div className="w-screen h-screen flex flex-col overflow-hidden">
+    <div className="w-screen flex flex-col overflow-hidden" style={{ height: '100vh', height: '100dvh' }}>
       {/* Conditionally render header with animation */}
       <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${
         hasMessages 

@@ -6,7 +6,9 @@
   }
 
   body {
-    @apply grid place-items-center min-w-[320px] h-screen relative m-0 bg-background text-foreground overflow-hidden;
+    @apply grid place-items-center min-w-[320px] relative m-0 bg-background text-foreground overflow-hidden;
+    height: 100vh; /* fallback for older browsers */
+    height: 100dvh; /* dynamic viewport height for mobile */
   }
 }
 
