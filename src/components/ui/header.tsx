@@ -22,7 +22,7 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, classNa
       <div className="flex items-center gap-3 justify-center">
         <Logo isListening={isListening} static={true}/>
         <div className="flex items-center justify-center gap-2">
-          <h1 className="text-lg font-semibold text-foreground ">Auto</h1>
+          <h1 className="text-xl font-semibold text-foreground ">Auto</h1>
         </div>
       </div>
 

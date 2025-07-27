@@ -71,7 +71,7 @@ export function MediaItem({
                 />
 
                 {showDimensions && item.width && item.height && hasLoaded && (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-sm text-gray-500 mt-1">
                         {item.width} × {item.height}
                     </div>
                 )}

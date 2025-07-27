@@ -294,7 +294,7 @@ export function Chat(props: {
           <div className="flex items-center gap-3 justify-start">
             <Logo size={50}/>
             {/* <div className="flex mt-1 items-center justify-center gap-2">
-              <h1 className="text-3xl font-semibold text-foreground ">Auto</h1>
+              <h1 className="text-4xl font-semibold text-foreground ">Auto</h1>
             </div> */}
           </div>
 
@@ -325,7 +325,7 @@ export function Chat(props: {
                   className={cn(
                     "flex-1 min-h-[48px] max-h-[200px] bg-background",
                     "border-0 rounded-md px-4 py-3",
-                    "text-base placeholder:text-muted-foreground",
+                    "text-lg placeholder:text-muted-foreground",
                     "focus-visible:outline-none focus-visible:ring-0",
                     "resize-none",
                     isLoading && "opacity-50 cursor-not-allowed"
@@ -384,7 +384,7 @@ export function Chat(props: {
                       <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
                       <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
                     </div>
-                    <span className="text-sm text-muted-foreground">Thinking...</span>
+                    <span className="text-base text-muted-foreground">Thinking...</span>
                   </div>
                 </div>
               </div>
@@ -440,7 +440,7 @@ export function Chat(props: {
                           )}
                             onClick={() => isCompleted && toggleToolCollapse(toolId)}
                           >
-                            <div className="text-sm flex flex-col items-start">
+                            <div className="text-base flex flex-col items-start">
                               <div className={cn(
                                 "font-medium flex items-center gap-1",
                                 isCompleted ? "text-green-700" : "text-orange-700",
@@ -460,13 +460,13 @@ export function Chat(props: {
                               </div>
 
                               {!isCollapsed && (part as any).input && (
-                                <div className="text-xs text-gray-600 mb-2 text-start">
+                                <div className="text-sm text-gray-600 mb-2 text-start">
                                   <strong>Query:</strong> {(part as any).input.query || JSON.stringify((part as any).input)}
                                 </div>
                               )}
 
                               {!isCollapsed && (part as any).output && isCompleted && (
-                                <div className="text-xs text-gray-600">
+                                <div className="text-sm text-gray-600">
                                   {Array.isArray((part as any).output) ? (
                                     // Check if this is an array of media items (images/videos)
                                     (part as any).output.length > 0 && ((part as any).output[0].type === "image" || (part as any).output[0].type === "video") ? (
@@ -561,7 +561,7 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <div className="text-sm whitespace-pre-wrap text-start">
+                            <div className="text-base whitespace-pre-wrap text-start">
                               {part.text}
                             </div>
                           </div>
@@ -631,7 +631,7 @@ export function Chat(props: {
                 className={cn(
                   "flex-1 min-h-[40px] max-h-[200px] bg-background",
                   "border-input rounded-md pr-3 py-2",
-                  "text-sm placeholder:text-muted-foreground",
+                  "text-lg placeholder:text-muted-foreground",
                   "focus-visible:outline-none ",
                   "resize-none",
                   isLoading && "opacity-50 cursor-not-allowed"
@@ -666,7 +666,7 @@ export function Chat(props: {
 
             {/* Disclaimer notices */}
             <div className="px-2 pb-1">
-              <p className="text-xs text-muted-foreground text-center">
+              <p className="text-sm text-muted-foreground text-center">
                 This is a research preview. Your chat data is public and AI can make mistakes.
               </p>
             </div>
@@ -711,14 +711,14 @@ export function Chat(props: {
               <>
                 {/* Current item indicator */}
                 <div className="absolute top-2 left-2 z-10">
-                  <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
+                  <div className="bg-black/50 text-white text-sm px-2 py-1 rounded">
                     {mediaItems.findIndex(item => item.id === selectedMediaItem.id) + 1} / {mediaItems.length}
                   </div>
                 </div>
 
                 {/* Navigation hint */}
                 <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-10">
-                  <div className="bg-black/50 text-white text-xs px-3 py-1 rounded flex items-center gap-2">
+                  <div className="bg-black/50 text-white text-sm px-3 py-1 rounded flex items-center gap-2">
                     <span>←</span>
                     <span>Navigate</span>
                     <span>→</span>
