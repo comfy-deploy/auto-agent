@@ -288,8 +288,8 @@ export function Chat(props: {
   // If no messages, show welcome state
   if (!hasMessages) {
     return (
-      <div className="h-full flex flex-col bg-background">
-        <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-6 transition-all duration-700 ease-out">
+      <div className="h-full flex flex-col bg-background overflow-hidden">
+        <div className="mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-center px-6 transition-all duration-700 ease-out">
           {/* Logo */}
           <div className="flex items-center gap-3 justify-start">
             <Logo size={50}/>

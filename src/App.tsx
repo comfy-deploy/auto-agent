@@ -57,7 +57,7 @@ export function App() {
   }
 
   return (
-    <div className="w-screen h-screen flex flex-col">
+    <div className="w-screen h-screen flex flex-col overflow-hidden">
       {/* Conditionally render header with animation */}
       <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${
         hasMessages 
@@ -67,7 +67,7 @@ export function App() {
         <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} />
       </div>
       
-      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out ${
+      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${
         hasMessages ? '' : 'pt-0'
       }`}>
         <Chat 
