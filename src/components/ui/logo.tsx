@@ -21,6 +21,7 @@ export function Logo({
     });
 
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const mountedRef = useRef(true);
 
     const look = useStateMachineInput(rive, "auto", "look");
     const listening = useStateMachineInput(rive, "auto", "listening");
@@ -29,8 +30,11 @@ export function Logo({
     useEffect(() => {
         if (isStatic) return;
         if (look && listening) {
-            look.value = true;
-            listening.value = false;
+            setTimeout(() => {
+                if (!mountedRef.current) return;
+                look.value = true;
+                listening.value = false;
+            }, 1000);
         }
     }, [look, listening, isStatic]);
 
@@ -52,14 +56,22 @@ export function Logo({
         if (isStatic || isListening || !look || !listening) return;
 
         const scheduleNextCycle = () => {
+            if (!mountedRef.current) return;
+            
             // Random interval between 2-6 seconds
             const randomInterval = Math.random() * 4000 + 1000;
-            
+
             intervalRef.current = setTimeout(() => {
+                if (!mountedRef.current) return;
+                
                 // Randomly choose between look and idle state
                 const shouldLook = Math.random() > 0.5;
-                look.value = shouldLook;
-                listening.value = !shouldLook;
+                if (look) {
+                    look.value = shouldLook;
+                }
+                if (listening) {
+                    listening.value = !shouldLook;
+                }
                 
                 scheduleNextCycle();
             }, randomInterval);
@@ -67,25 +79,18 @@ export function Logo({
 
         // Start the first cycle after initial mount delay
         const initialDelay = setTimeout(() => {
+            if (!mountedRef.current) return;
             scheduleNextCycle();
         }, 1000); // Wait 1 second before starting random cycling
 
         return () => {
+            mountedRef.current = false;
             clearTimeout(initialDelay);
             if (intervalRef.current) {
                 clearTimeout(intervalRef.current);
             }
         };
     }, [look, listening, isListening, isStatic]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (intervalRef.current) {
-                clearTimeout(intervalRef.current);
-            }
-        };
-    }, []);
 
     return (
         <div className={cn("flex items-center justify-center", className)}>

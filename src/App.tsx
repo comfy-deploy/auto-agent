@@ -59,7 +59,7 @@ export function App() {
   return (
     <div className="w-screen h-screen flex flex-col">
       {/* Conditionally render header with animation */}
-      <div className={`transition-all duration-500 ease-out ${
+      <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${
         hasMessages 
           ? 'translate-y-0 opacity-100' 
           : '-translate-y-full opacity-0 pointer-events-none'
