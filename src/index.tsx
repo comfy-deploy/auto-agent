@@ -96,6 +96,7 @@ const defaultModels = {
   image: {
     "fal-ai/flux/dev": "State of the art image generation model",
     "fal-ai/flux/schnell": "Fast image generation model",
+    "fal-ai/imagen4/preview": "Google's Imagen 4 model with enhanced detail, richer lighting, and fewer artifacts",
   },
   image_editing: {
     "fal-ai/flux-kontext": "Complex image generation model",
@@ -128,6 +129,7 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
   'fal-ai/flux-pro': 100, // Highest quality, slower
   'fal-ai/flux-realism': 92,
   'fal-ai/flux-kontext': 96, // Excellent at following complex prompts and context
+  'fal-ai/imagen4/preview': 97, // Google's high-quality image generation with enhanced detail
 
   // Other strong image models
   'fal-ai/stable-diffusion-v3-medium': 85,
@@ -152,11 +154,11 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
 
 // Category    for different use cases
 const CATEGORY_PREFERENCES = {
-  'photorealistic': ['fal-ai/flux/dev', 'fal-ai/flux-realism'],
-  'artistic': ['fal-ai/flux/schnell', 'fal-ai/recraft-v3'],
-  'complex_prompts': ['fal-ai/flux-kontext', 'fal-ai/flux/dev'], // For detailed, complex descriptions
+  'photorealistic': ['fal-ai/flux/dev', 'fal-ai/flux-realism', 'fal-ai/imagen4/preview'],
+  'artistic': ['fal-ai/flux/schnell', 'fal-ai/recraft-v3', 'fal-ai/imagen4/preview'],
+  'complex_prompts': ['fal-ai/flux-kontext', 'fal-ai/flux/dev', 'fal-ai/imagen4/preview'], // For detailed, complex descriptions
   'fast': ['fal-ai/flux/schnell', 'fal-ai/sdxl'],
-  'highest_quality': ['fal-ai/flux-pro', 'fal-ai/flux/dev', 'fal-ai/flux-kontext'],
+  'highest_quality': ['fal-ai/flux-pro', 'fal-ai/imagen4/preview', 'fal-ai/flux/dev', 'fal-ai/flux-kontext'],
   'video': ['fal-ai/runway-gen3/turbo/image-to-video', 'fal-ai/luma-dream-machine'],
   'upscaling': ['fal-ai/clarity-upscaler', 'fal-ai/real-esrgan'],
 };
