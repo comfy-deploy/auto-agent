@@ -6,10 +6,13 @@ import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRigh
 import { useQueryState } from "nuqs";
 import { useMutation } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
+import { Logo } from "./components/ui/logo";
 
 export function Chat(props: {
   initialMessages: UIMessage[];
   chatId: string;
+  onMessagesChange?: (hasMessages: boolean) => void;
+  onLoadingChange?: (isLoading: boolean) => void;
 }) {
   const [_, setChatId] = useQueryState('chatId')
   const [prompt, setPrompt] = useQueryState("prompt");
@@ -22,6 +25,12 @@ export function Chat(props: {
     id: props.chatId,
     // resume: props.chatId ? true : false,
   });
+
+  // Notify parent component about message state
+  useEffect(() => {
+    const hasMessages = messages.length > 0;
+    props.onMessagesChange?.(hasMessages);
+  }, [messages.length, props.onMessagesChange]);
 
   useEffect(() => {
     if (prompt && props.chatId && lastSentPrompt.current !== prompt) {
@@ -109,21 +118,21 @@ export function Chat(props: {
   useEffect(() => {
     const handleKeyDown = (e: Event) => {
       const keyboardEvent = e as globalThis.KeyboardEvent;
-      
+
       if (!selectedMediaItem) return;
-      
+
       if (keyboardEvent.key === 'Escape') {
         setSelectedMediaItem(null);
         return;
       }
-      
+
       // Arrow key navigation
       if (keyboardEvent.key === 'ArrowLeft' || keyboardEvent.key === 'ArrowRight') {
         keyboardEvent.preventDefault();
-        
+
         const currentIndex = mediaItems.findIndex(item => item.id === selectedMediaItem.id);
         if (currentIndex === -1) return;
-        
+
         let nextIndex;
         if (keyboardEvent.key === 'ArrowLeft') {
           // Go to previous item (cycle to end if at beginning)
@@ -132,7 +141,7 @@ export function Chat(props: {
           // Go to next item (cycle to beginning if at end)
           nextIndex = currentIndex === mediaItems.length - 1 ? 0 : currentIndex + 1;
         }
-        
+
         const nextItem = mediaItems[nextIndex];
         setSelectedMediaItem({
           id: nextItem.id,
@@ -228,26 +237,32 @@ export function Chat(props: {
 
 
   const isLoading = status !== "ready";
+  const hasMessages = messages.length > 0;
+
+  // Notify parent component about loading state
+  useEffect(() => {
+    props.onLoadingChange?.(isLoading);
+  }, [isLoading, props.onLoadingChange]);
 
   const downloadMedia = async (url: string, type: 'image' | 'video') => {
     try {
       const response = await fetch(url);
       const blob = await response.blob();
-      
+
       // Create a temporary download link
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      
+
       // Generate filename based on type and timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const extension = type === 'image' ? 'png' : 'mp4';
       link.download = `${type}_${timestamp}.${extension}`;
-      
+
       // Trigger download
       document.body.appendChild(link);
       link.click();
-      
+
       // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
@@ -256,17 +271,93 @@ export function Chat(props: {
     }
   };
 
+  // If no messages, show welcome state
+  if (!hasMessages) {
+    return (
+      <div className="h-full flex flex-col bg-background">
+        <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-6 transition-all duration-700 ease-out">
+          {/* Logo */}
+          <div className="flex items-center gap-3 justify-start">
+            <Logo size={50}/>
+            {/* <div className="flex mt-1 items-center justify-center gap-2">
+              <h1 className="text-3xl font-semibold text-foreground ">Auto</h1>
+            </div> */}
+          </div>
+
+
+          {/* Welcome Message */}
+          {/* <div className="mb-8 text-center transition-all duration-500 ease-out delay-100">
+            <p className="text-muted-foreground">
+              Time to create something
+            </p>
+          </div> */}
+
+          {/* Centered Input */}
+          <div className="mt-4 w-full transition-all duration-500 ease-out delay-200">
+            <div className="bg-background shadow-lg border border-gray-200 rounded-2xl p-4">
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmit();
+              }} className="flex items-center gap-3">
+                <textarea
+                  ref={promptInputRef}
+                  name="prompt"
+                  placeholder="What do you want to create?"
+                  onKeyDown={handleKeyDown}
+                  disabled={isLoading}
+                  rows={1}
+                  className={cn(
+                    "flex-1 min-h-[48px] max-h-[200px] bg-background",
+                    "border-0 rounded-md px-4 py-3",
+                    "text-base placeholder:text-muted-foreground",
+                    "focus-visible:outline-none focus-visible:ring-0",
+                    "resize-none",
+                    isLoading && "opacity-50 cursor-not-allowed"
+                  )}
+                  style={{
+                    height: 'auto',
+                    minHeight: '48px'
+                  }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = 'auto';
+                    target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+                  }}
+                  required
+                />
+
+                <Button
+                  type="submit"
+                  className="rounded-full h-12 w-12"
+                  disabled={isLoading}
+                  size="icon"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <ArrowUp className="w-5 h-5" />
+                  )}
+                </Button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Existing layout with messages
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background transition-all duration-700 ease-out">
       {/* Messages Container */}
       <div className={cn(
-        "flex-1 flex flex-col pt-16",
+        "flex-1 flex flex-col pt-16 transition-all duration-500 ease-out",
         mediaItems.length > 0 ? "pb-44" : "pb-16"
       )}>
         <div className="w-full max-w-4xl mx-auto px-6 pb-4">
           <div className="flex flex-col-reverse space-y-2 space-y-reverse">
             {isLoading && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 animate-fade-in">
                 <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
                   <div className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin"></div>
                 </div>
@@ -284,7 +375,7 @@ export function Chat(props: {
             )}
 
             {messages.slice().reverse().map((message, index) => (
-              <div key={message.id} className="flex flex-col gap-2">
+              <div key={message.id} className="flex flex-col gap-2 animate-slide-up" style={{ animationDelay: `${index * 50}ms` }}>
                 {message.parts.map((part, partIndex) => {
                   // Handle different part types
                   // if (part.type === "step-start") {
@@ -472,7 +563,7 @@ export function Chat(props: {
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full">
+      <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out">
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
           {mediaItems.length > 0 && (
@@ -548,11 +639,11 @@ export function Chat(props: {
 
       {/* Media Modal */}
       {selectedMediaItem && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={() => setSelectedMediaItem(null)}
         >
-          <div 
+          <div
             className="relative max-w-[90vw] max-h-[90vh]  rounded-lg  overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
@@ -566,7 +657,7 @@ export function Chat(props: {
               >
                 <Download className="w-4 h-4" />
               </button>
-              
+
               {/* Close button */}
               <button
                 onClick={() => setSelectedMediaItem(null)}
@@ -602,8 +693,8 @@ export function Chat(props: {
             <MediaItem
               item={selectedMediaItem}
               className="max-w-full max-h-full object-contain"
-              style={{ 
-                maxWidth: selectedMediaItem.width ? selectedMediaItem.width : '90vw', 
+              style={{
+                maxWidth: selectedMediaItem.width ? selectedMediaItem.width : '90vw',
                 maxHeight: selectedMediaItem.height ? selectedMediaItem.height : '90vh',
                 width: '100%',
                 height: '100%',

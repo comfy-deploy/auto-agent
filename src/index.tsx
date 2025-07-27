@@ -1112,6 +1112,12 @@ async function startServer() {
       // Serve index.html for all unmatched routes.
       "/*": index,
 
+      "/auto.riv": new Response(await Bun.file("./public/auto.riv").bytes(), {
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+      }),
+
       "/api/chat/new": {
         async POST(req) {
           const chatId = generateId(); // generate a unique chat ID
