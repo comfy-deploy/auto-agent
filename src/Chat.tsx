@@ -17,6 +17,7 @@ export function Chat(props: {
   const [_, setChatId] = useQueryState('chatId')
   const [prompt, setPrompt] = useQueryState("prompt");
   const lastSentPrompt = useRef("");
+  const [promptInputValue, setPromptInputValue] = useState("");
 
   console.log("props.chatId", props.chatId);
 
@@ -222,6 +223,7 @@ export function Chat(props: {
         text: promptInputRef.current?.value,
       });
       promptInputRef.current.value = "";
+      setPromptInputValue("");
     }
   };
 
@@ -318,6 +320,8 @@ export function Chat(props: {
                   onKeyDown={handleKeyDown}
                   disabled={isLoading}
                   rows={1}
+                  value={promptInputValue}
+                  onChange={(e) => setPromptInputValue(e.target.value)}
                   className={cn(
                     "flex-1 min-h-[48px] max-h-[200px] bg-background",
                     "border-0 rounded-md px-4 py-3",
@@ -341,7 +345,7 @@ export function Chat(props: {
                 <Button
                   type="submit"
                   className="rounded-full h-12 w-12"
-                  disabled={isLoading}
+                  disabled={isLoading || !promptInputValue.trim()}
                   size="icon"
                 >
                   {isLoading ? (
@@ -622,6 +626,8 @@ export function Chat(props: {
                 onKeyDown={handleKeyDown}
                 disabled={isLoading}
                 rows={1}
+                value={promptInputValue}
+                onChange={(e) => setPromptInputValue(e.target.value)}
                 className={cn(
                   "flex-1 min-h-[40px] max-h-[200px] bg-background",
                   "border-input rounded-md pr-3 py-2",
@@ -645,7 +651,7 @@ export function Chat(props: {
               <Button
                 type="submit"
                 className="rounded-full"
-                disabled={isLoading}
+                disabled={isLoading || !promptInputValue.trim()}
                 size="icon"
               >
                 {isLoading ? (
@@ -657,6 +663,13 @@ export function Chat(props: {
                 )}
               </Button>
             </form>
+
+            {/* Disclaimer notices */}
+            <div className="px-2 pb-1">
+              <p className="text-xs text-muted-foreground text-center">
+                This is a research preview. Your chat data is public and AI can make mistakes.
+              </p>
+            </div>
 
           </div>
         </div>
