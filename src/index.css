@@ -98,3 +98,51 @@ body::before {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Prevent horizontal overflow and ensure proper text wrapping */
+.break-words {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Ensure containers don't overflow on small screens */
+@media (max-width: 640px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  /* Force text content to wrap and not overflow */
+  * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* Specific handling for pre-formatted text to prevent overflow */
+  pre, code {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-all;
+  }
+}
+
+/* Additional responsive utilities */
+@media (max-width: 480px) {
+  /* Even smaller screens - more aggressive padding reduction */
+  .px-6 {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  
+  .px-4 {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  
+  /* Ensure message bubbles are properly sized */
+  .max-w-\[85\%\] {
+    max-width: 90% !important;
+  }
+}

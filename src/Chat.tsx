@@ -289,7 +289,7 @@ export function Chat(props: {
   if (!hasMessages) {
     return (
       <div className="h-full flex flex-col bg-background">
-        <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-6 transition-all duration-700 ease-out">
+        <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-4 sm:px-6 transition-all duration-700 ease-out">
           {/* Logo */}
           <div className="flex items-center gap-3 justify-start">
             <Logo size={50}/>
@@ -370,14 +370,14 @@ export function Chat(props: {
         "flex-1 flex flex-col pt-16 transition-all duration-500 ease-out",
         mediaItems.length > 0 ? "pb-44" : "pb-16"
       )}>
-        <div className="w-full max-w-4xl mx-auto px-6 pb-4">
+        <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 pb-4">
           <div className="flex flex-col-reverse space-y-2 space-y-reverse">
             {isLoading && (
               <div className="flex gap-2 animate-fade-in">
                 <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
                   <div className="w-3 h-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin"></div>
                 </div>
-                <div className="bg-muted rounded-lg px-3 py-2">
+                <div className="bg-muted rounded-lg px-3 py-2 max-w-[calc(100%-2rem)] overflow-hidden">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
                       <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
@@ -433,6 +433,7 @@ export function Chat(props: {
                           </div>
                           <div className={cn(
                             "rounded-lg border cursor-pointer transition-all",
+                            "max-w-[calc(100%-2rem)] min-w-0 overflow-hidden",
                             isCompleted
                               ? "bg-green-50 border-green-200"
                               : "bg-orange-50 border-orange-200",
@@ -460,21 +461,21 @@ export function Chat(props: {
                               </div>
 
                               {!isCollapsed && (part as any).input && (
-                                <div className="text-sm text-gray-600 mb-2 text-start">
+                                <div className="text-sm text-gray-600 mb-2 text-start break-words">
                                   <strong>Query:</strong> {(part as any).input.query || JSON.stringify((part as any).input)}
                                 </div>
                               )}
 
                               {!isCollapsed && (part as any).output && isCompleted && (
-                                <div className="text-sm text-gray-600">
+                                <div className="text-sm text-gray-600 w-full">
                                   {Array.isArray((part as any).output) ? (
                                     // Check if this is an array of media items (images/videos)
                                     (part as any).output.length > 0 && ((part as any).output[0].type === "image" || (part as any).output[0].type === "video") ? (
-                                      <div>
+                                      <div className="w-full">
                                         <strong>Generated {(part as any).output.length} media item{(part as any).output.length > 1 ? 's' : ''}</strong>
-                                        <div className="mt-2 grid grid-cols-1 gap-2">
+                                        <div className="mt-2 grid grid-cols-1 gap-2 w-full">
                                           {(part as any).output.map((item: any, i: number) => (
-                                            <div key={i} className="bg-white rounded border p-2">
+                                            <div key={i} className="bg-white rounded border p-2 w-full">
                                               <div className="font-medium text-gray-800 mb-1">
                                                 {item.type === "image" ? "🖼️" : "🎥"} {item.type === "image" ? "Image" : "Video"} {i + 1}
                                               </div>
@@ -486,8 +487,8 @@ export function Chat(props: {
                                                   width: item.width,
                                                   height: item.height
                                                 }}
-                                                className="max-w-full h-auto rounded border max-h-48 object-contain"
-                                                style={{ maxWidth: '300px' }}
+                                                className="w-full max-w-full h-auto rounded border max-h-48 object-contain"
+                                                style={{ maxWidth: '100%', width: '100%' }}
                                                 showDimensions={item.type === "image"}
                                                 controls={item.type === "video"}
                                                 onClick={() => setSelectedMediaItem({
@@ -504,12 +505,12 @@ export function Chat(props: {
                                       </div>
                                     ) : (
                                       // Default handling for other arrays (like search results)
-                                      <div>
+                                      <div className="w-full">
                                         <strong>Found {(part as any).output.length} results</strong>
                                         {(part as any).output.slice(0, 2).map((result: any, i: number) => (
-                                          <div key={i} className="mt-1 p-1 bg-white rounded border">
-                                            <div className="font-medium text-gray-800">{result.title}</div>
-                                            <div className="text-gray-500 truncate">{result.content?.substring(0, 100)}...</div>
+                                          <div key={i} className="mt-1 p-1 bg-white rounded border w-full overflow-hidden">
+                                            <div className="font-medium text-gray-800 break-words">{result.title}</div>
+                                            <div className="text-gray-500 break-words">{result.content?.substring(0, 100)}...</div>
                                           </div>
                                         ))}
                                         {(part as any).output.length > 2 && (
@@ -520,7 +521,7 @@ export function Chat(props: {
                                       </div>
                                     )
                                   ) : (
-                                    <div><strong>Output:</strong> {JSON.stringify((part as any).output).substring(0, 200)}...</div>
+                                    <div className="break-words"><strong>Output:</strong> {JSON.stringify((part as any).output).substring(0, 200)}...</div>
                                   )}
                                 </div>
                               )}
@@ -556,12 +557,13 @@ export function Chat(props: {
                           )}
 
                           <div className={cn(
-                            "max-w-[80%] rounded-lg px-3 py-2",
+                            "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] rounded-lg px-3 py-2",
+                            "min-w-0 overflow-hidden",
                             message.role === "user"
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <div className="text-base whitespace-pre-wrap text-start">
+                            <div className="text-base whitespace-pre-wrap text-start break-words">
                               {part.text}
                             </div>
                           </div>
@@ -587,7 +589,7 @@ export function Chat(props: {
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out">
+      <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
           {mediaItems.length > 0 && (
@@ -666,7 +668,7 @@ export function Chat(props: {
 
             {/* Disclaimer notices */}
             <div className="px-2 pb-1">
-              <p className="text-sm text-muted-foreground text-center">
+              <p className="text-sm text-muted-foreground text-center break-words">
                 This is a research preview. Your chat data is public and AI can make mistakes.
               </p>
             </div>
@@ -678,11 +680,11 @@ export function Chat(props: {
       {/* Media Modal */}
       {selectedMediaItem && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
           onClick={() => setSelectedMediaItem(null)}
         >
           <div
-            className="relative max-w-[90vw] max-h-[90vh]  rounded-lg  overflow-hidden"
+            className="relative max-w-[90vw] max-h-[90vh] rounded-lg overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Action buttons */}
