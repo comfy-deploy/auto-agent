@@ -102,6 +102,7 @@ const defaultModels = {
     "fal-ai/flux-kontext": "Complex image generation model",
   },
   video: {
+    "fal-ai/wan/v2.2-a14b/image-to-video": "State of the art video generation model with image input",
     "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
     "fal-ai/luma-dream-machine/image-to-video": "High quality video generation model",
     "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
@@ -685,7 +686,7 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
 }
 
 // Helper function to transform OpenAPI spec into a Vercel AI SDK tool definition
-function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
+function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   try {
     if (!openApiSpec || !openApiSpec.components?.schemas) {
       console.warn(`No schemas found for model ${modelInfo.id}`);
@@ -724,7 +725,7 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
     const tool = {
       description: `${modelInfo.title}: ${modelInfo.description}`,
       inputSchema: zodSchema,
-      execute: async (parameters: any) => {
+      execute: async (parameters: any, { toolCallId }) => {
         // Log the execution
         console.log(`🚀 Executing tool: ${toolName}`);
         console.log(`📋 Model ID: ${modelInfo.id}`);
@@ -742,6 +743,13 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
             logs: true,
             onQueueUpdate: (update) => {
               if (update.status === "IN_PROGRESS") {
+                writer.write({
+                  type: "data-tool-log",
+                  id: toolCallId as string,
+                  data: {
+                    log: update.logs.map((log) => log.message).join("\n"),
+                  }
+                })
                 // update.logs.map((log) => log.message).forEach(console.log);
               }
             },
@@ -780,11 +788,11 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any) {
 }
 
 // Helper function to create Vercel AI SDK compatible tools from model search results
-async function createVercelToolsFromModels(models: any[]) {
+async function createVercelToolsFromModels(models: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   const toolPromises = models.map(async (model) => {
     const openApiSpec = await fetchModelOpenAPI(model.id);
     if (openApiSpec) {
-      return transformOpenAPIToVercelTool(model, openApiSpec);
+      return transformOpenAPIToVercelTool(model, openApiSpec, writer);
     }
     return null;
   });
@@ -801,7 +809,7 @@ async function createVercelToolsFromModels(models: any[]) {
 }
 
 // Helper function to create Vercel AI tools from defaultModels
-async function createDefaultModelTools() {
+async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   try {
     console.log('🔧 Creating tools from defaultModels...');
 
@@ -823,7 +831,7 @@ async function createDefaultModelTools() {
     console.log(`📋 Found ${allModels.length} models in defaultModels:`, allModels.map(m => m.id));
 
     // Create tools for all models
-    const tools = await createVercelToolsFromModels(allModels);
+    const tools = await createVercelToolsFromModels(allModels, writer);
 
     console.log(`✅ Successfully created ${Object.keys(tools).length} tools from defaultModels`);
     return tools;
@@ -832,60 +840,6 @@ async function createDefaultModelTools() {
     console.error('❌ Error creating tools from defaultModels:', error);
     return {};
   }
-}
-
-// Cache for default model tools to avoid refetching on every request
-let defaultModelToolsCache: any = null;
-let defaultModelToolsCacheTime: number = 0;
-const DEFAULT_TOOLS_CACHE_TTL = 300000; // 5 minutes in milliseconds
-
-// Helper function to get cached default model tools
-async function getCachedDefaultModelTools() {
-  const now = Date.now();
-
-  // Return cached tools if they exist and are still fresh
-  if (defaultModelToolsCache && (now - defaultModelToolsCacheTime) < DEFAULT_TOOLS_CACHE_TTL) {
-    console.log('🎯 Using cached default model tools');
-    return defaultModelToolsCache;
-  }
-
-  // Create fresh tools and cache them
-  console.log('🔄 Refreshing default model tools cache');
-  defaultModelToolsCache = await createDefaultModelTools();
-  defaultModelToolsCacheTime = now;
-
-  return defaultModelToolsCache;
-}
-
-// Utility function to get the default model tools mapping
-export async function getDefaultModelToolsMapping() {
-  const tools = await getCachedDefaultModelTools();
-
-  // Create a structured mapping that shows the relationship between defaultModels and tools
-  const mapping: Record<string, Record<string, any>> = {};
-
-  for (const [category, models] of Object.entries(defaultModels)) {
-    mapping[category] = {};
-
-    for (const [modelId, description] of Object.entries(models)) {
-      const toolName = modelId.replace(/[^a-zA-Z0-9_]/g, '_');
-      const tool = tools[toolName];
-
-      mapping[category][modelId] = {
-        description,
-        toolName,
-        tool: tool ? 'Available' : 'Not Available',
-        url: `https://fal.ai/models/${modelId}`,
-      };
-    }
-  }
-
-  return {
-    mapping,
-    tools,
-    totalModels: Object.values(defaultModels).reduce((acc, models) => acc + Object.keys(models).length, 0),
-    availableTools: Object.keys(tools).length,
-  };
 }
 
 export const webSearch = tool({
@@ -920,7 +874,7 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
   execute: async ({ prompt }, { toolCallId }) => {
     console.log("Searching fal.ai models for:", prompt);
 
-    const searchedTools = await createVercelToolsFromModels(await searchFalModels(prompt, 3, writer))
+    const searchedTools = await createVercelToolsFromModels(await searchFalModels(prompt, 3, writer), writer)
 
     // Merge tools, giving priority to searched tools (more specific to the prompt)
 
@@ -951,7 +905,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
     console.log(`Using default fal.ai models for: ${prompt} (category: ${category})`);
 
     // Get default model tools
-    const defaultTools = await getCachedDefaultModelTools();
+    const defaultTools = await createDefaultModelTools(writer);
 
     // Filter tools by category if specified
     let filteredTools = defaultTools;
@@ -987,7 +941,9 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
     writer.merge(stream.toUIMessageStream());
 
-    await consumeStream({ stream: stream.fullStream })
+    await consumeStream({ stream: stream.fullStream, onError: (error) => {
+      console.error("Error consuming stream:", error);
+    } })
 
     return Object.keys(filteredTools);
   }

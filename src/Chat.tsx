@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
@@ -6,6 +7,7 @@ import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRigh
 import { useQueryState } from "nuqs";
 import { useMutation } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
+import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
 
 export function Chat(props: {
@@ -83,6 +85,7 @@ export function Chat(props: {
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
   const [selectedMediaItem, setSelectedMediaItem] = useState<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number } | null>(null);
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'images' | 'videos'>('all');
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -95,10 +98,13 @@ export function Chat(props: {
         if (part.type?.startsWith("tool-") && (part as any).output && Array.isArray((part as any).output)) {
           (part as any).output.forEach((item: any, itemIndex: number) => {
             if (item.type === "image" || item.type === "video") {
+              // Handle cases where url is an object with nested url property
+              const extractedUrl = typeof item.url === 'object' && item.url?.url ? item.url.url : item.url;
+              
               mediaItems.push({
                 id: `${message.id}-${partIndex}-${itemIndex}`,
                 type: item.type,
-                url: item.url,
+                url: extractedUrl,
                 width: item.width,
                 height: item.height,
                 messageId: message.id,
@@ -114,6 +120,9 @@ export function Chat(props: {
   };
 
   const mediaItems = getAllMediaItems();
+  const filteredMediaItems = mediaItems.filter(item => 
+    mediaFilter === 'all' || item.type === mediaFilter.slice(0, -1) // 'images' -> 'image', 'videos' -> 'video'
+  );
 
   // Handle keyboard navigation for modal
   useEffect(() => {
@@ -131,19 +140,19 @@ export function Chat(props: {
       if (keyboardEvent.key === 'ArrowLeft' || keyboardEvent.key === 'ArrowRight') {
         keyboardEvent.preventDefault();
 
-        const currentIndex = mediaItems.findIndex(item => item.id === selectedMediaItem.id);
+        const currentIndex = filteredMediaItems.findIndex(item => item.id === selectedMediaItem.id);
         if (currentIndex === -1) return;
 
         let nextIndex;
         if (keyboardEvent.key === 'ArrowLeft') {
           // Go to previous item (cycle to end if at beginning)
-          nextIndex = currentIndex === 0 ? mediaItems.length - 1 : currentIndex - 1;
+          nextIndex = currentIndex === 0 ? filteredMediaItems.length - 1 : currentIndex - 1;
         } else {
           // Go to next item (cycle to beginning if at end)
-          nextIndex = currentIndex === mediaItems.length - 1 ? 0 : currentIndex + 1;
+          nextIndex = currentIndex === filteredMediaItems.length - 1 ? 0 : currentIndex + 1;
         }
 
-        const nextItem = mediaItems[nextIndex];
+        const nextItem = filteredMediaItems[nextIndex];
         setSelectedMediaItem({
           id: nextItem.id,
           type: nextItem.type,
@@ -156,7 +165,7 @@ export function Chat(props: {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMediaItem, mediaItems]);
+  }, [selectedMediaItem, filteredMediaItems]);
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -288,7 +297,7 @@ export function Chat(props: {
   // If no messages, show welcome state
   if (!hasMessages) {
     return (
-      <div className="h-full flex flex-col bg-background overflow-hidden">
+      <div className="h-full flex flex-col bg-background">
         <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-4 sm:px-6 transition-all duration-700 ease-out">
           {/* Logo */}
           <div className="flex items-center gap-3 justify-start">
@@ -368,7 +377,7 @@ export function Chat(props: {
       {/* Messages Container */}
       <div className={cn(
         "flex-1 flex flex-col pt-16 transition-all duration-500 ease-out",
-        mediaItems.length > 0 ? "pb-44" : "pb-16"
+        mediaItems.length > 0 ? "pb-64" : "pb-20"
       )}>
         <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 pb-4">
           <div className="flex flex-col-reverse space-y-2 space-y-reverse">
@@ -473,34 +482,18 @@ export function Chat(props: {
                                     (part as any).output.length > 0 && ((part as any).output[0].type === "image" || (part as any).output[0].type === "video") ? (
                                       <div className="w-full">
                                         <strong>Generated {(part as any).output.length} media item{(part as any).output.length > 1 ? 's' : ''}</strong>
-                                        <div className="mt-2 grid grid-cols-1 gap-2 w-full">
-                                          {(part as any).output.map((item: any, i: number) => (
-                                            <div key={i} className="bg-white rounded border p-2 w-full">
-                                              <div className="font-medium text-gray-800 mb-1">
-                                                {item.type === "image" ? "🖼️" : "🎥"} {item.type === "image" ? "Image" : "Video"} {i + 1}
-                                              </div>
-                                              <MediaItem
-                                                item={{
-                                                  id: `${message.id}-${partIndex}-${i}`,
-                                                  type: item.type,
-                                                  url: item.url,
-                                                  width: item.width,
-                                                  height: item.height
-                                                }}
-                                                className="w-full max-w-full h-auto rounded border max-h-48 object-contain"
-                                                style={{ maxWidth: '100%', width: '100%' }}
-                                                showDimensions={item.type === "image"}
-                                                controls={item.type === "video"}
-                                                onClick={() => setSelectedMediaItem({
-                                                  id: `${message.id}-${partIndex}-${i}`,
-                                                  type: item.type,
-                                                  url: item.url,
-                                                  width: item.width,
-                                                  height: item.height
-                                                })}
-                                              />
-                                            </div>
-                                          ))}
+                                        <div className="mt-2">
+                                          <MediaGallery
+                                            items={(part as any).output.map((item: any, i: number) => ({
+                                              id: `${message.id}-${partIndex}-${i}`,
+                                              type: item.type,
+                                              url: typeof item.url === 'object' && item.url?.url ? item.url.url : item.url,
+                                              width: item.width,
+                                              height: item.height
+                                            }))}
+                                            onItemClick={(item) => setSelectedMediaItem(item)}
+                                            showLabels={true}
+                                          />
                                         </div>
                                       </div>
                                     ) : (
@@ -510,7 +503,7 @@ export function Chat(props: {
                                         {(part as any).output.slice(0, 2).map((result: any, i: number) => (
                                           <div key={i} className="mt-1 p-1 bg-white rounded border w-full overflow-hidden">
                                             <div className="font-medium text-gray-800 break-words">{result.title}</div>
-                                            <div className="text-gray-500 break-words">{result.content?.substring(0, 100)}...</div>
+                                            <div className="text-gray-500 break-words">{result.content ? result.content?.substring(0, 100) : result}...</div>
                                           </div>
                                         ))}
                                         {(part as any).output.length > 2 && (
@@ -593,17 +586,30 @@ export function Chat(props: {
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
           {mediaItems.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pt-2">
-              {mediaItems.map((item) => (
-                <div key={item.id} className="flex-shrink-0 relative group rounded-lg overflow-hidden border hover:-translate-y-2 transition-transform duration-200 ease-out">
-                  <MediaItem
-                    item={item}
-                    imageClassName="h-16 w-16 object-cover"
-                    onClick={() => setSelectedMediaItem(item)}
-                    muted={item.type === 'video'}
-                  />
-                </div>
-              ))}
+            <div className="pt-2">
+              {/* Filter Controls */}
+              <div className="flex gap-1 mb-2">
+                {['all', 'images', 'videos'].map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setMediaFilter(filter as any)}
+                    className={cn(
+                      "px-2 py-1 rounded text-xs transition-colors capitalize",
+                      mediaFilter === filter 
+                        ? "bg-primary text-primary-foreground" 
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    )}
+                  >
+                    {filter} {filter !== 'all' && `(${mediaItems.filter(item => item.type === filter.slice(0, -1)).length})`}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Media Items */}
+              <MediaGallery
+                items={filteredMediaItems}
+                onItemClick={(item) => setSelectedMediaItem(item)}
+              />
             </div>
           )}
 
@@ -678,9 +684,9 @@ export function Chat(props: {
       </div>
 
       {/* Media Modal */}
-      {selectedMediaItem && (
+      {selectedMediaItem && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
           onClick={() => setSelectedMediaItem(null)}
         >
           <div
@@ -709,12 +715,12 @@ export function Chat(props: {
             </div>
 
             {/* Navigation indicators */}
-            {mediaItems.length > 1 && (
+            {filteredMediaItems.length > 1 && (
               <>
                 {/* Current item indicator */}
                 <div className="absolute top-2 left-2 z-10">
                   <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
-                    {mediaItems.findIndex(item => item.id === selectedMediaItem.id) + 1} / {mediaItems.length}
+                    {filteredMediaItems.findIndex(item => item.id === selectedMediaItem.id) + 1} / {filteredMediaItems.length}
                   </div>
                 </div>
 
@@ -745,7 +751,8 @@ export function Chat(props: {
               autoPlay={selectedMediaItem.type === 'video'}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

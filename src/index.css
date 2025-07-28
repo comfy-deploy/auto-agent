@@ -148,3 +148,20 @@ body::before {
     max-width: 90% !important;
   }
 }
+
+/* Video height constraints for media gallery */
+video {
+  max-height: 200px; /* Global max height for all videos */
+}
+
+/* Specific constraints for gallery videos */
+.media-gallery video,
+[class*="h-16"] video {
+  max-height: 4rem !important; /* 64px - same as h-16 */
+  height: 4rem !important;
+}
+
+/* Ensure video containers don't exceed intended sizes */
+.media-gallery .relative {
+  max-height: 5rem; /* 80px - slightly larger than video for container */
+}

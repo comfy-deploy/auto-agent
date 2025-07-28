@@ -5,6 +5,7 @@ import { useQueryState } from 'nuqs'
 import { useEffect, useState } from "react";
 import type { UIMessage } from "ai";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { cn } from "./lib/utils";
 
 export function App() {
   const [chatId, setChatId] = useQueryState('chatId', { defaultValue: '' });
@@ -57,7 +58,7 @@ export function App() {
   }
 
   return (
-    <div className="w-screen flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
+    <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "")}>
       {/* Conditionally render header with animation */}
       <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${hasMessages
           ? 'translate-y-0 opacity-100'
