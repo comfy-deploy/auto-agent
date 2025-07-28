@@ -1,6 +1,6 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream, tool } from 'ai';
 import { z } from "zod";
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
@@ -94,9 +94,9 @@ console.log(`🗄️  Redis initialized successfully`);
 
 const defaultModels = {
   image: {
-    "fal-ai/flux/dev": "State of the art image generation model",
-    "fal-ai/flux/schnell": "Fast image generation model",
+    "fal-ai/flux/dev": "State of the art image generation model for general case",
     "fal-ai/imagen4/preview": "Google's Imagen 4 model with enhanced detail, richer lighting, and fewer artifacts",
+    "fal-ai/flux/schnell": "Fast image generation model",
   },
   image_editing: {
     "fal-ai/flux-kontext": "Complex image generation model",
@@ -104,8 +104,6 @@ const defaultModels = {
   video: {
     "fal-ai/wan/v2.2-a14b/image-to-video": "State of the art video generation model with image input",
     "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
-    "fal-ai/luma-dream-machine/image-to-video": "High quality video generation model",
-    "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
   },
   upscaling: {
     "fal-ai/clarity-upscaler": "High quality upscaling model",
@@ -152,91 +150,6 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
   // 3D
   'fal-ai/triposr': 85,
 };
-
-// Helper function to use LLM for intelligent model selection
-async function selectBestModelWithLLM(userQuery: string, candidateModels: any[], hasImageInput: boolean, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>): Promise<any[]> {
-  try {
-    const modelDescriptions = candidateModels.map(model =>
-      `${model.id}: ${model.title} - ${model.description} (Quality Score: ${model.qualityScore}${model.requiresImage ? ', Requires Image Input' : ''})`
-    ).join('\n');
-
-    // Extract valid model IDs for validation
-    const validModelIds = candidateModels.map(model => model.id);
-
-    const stream = await streamObject({
-      model: "anthropic/claude-4-sonnet",
-      system: `You are an AI model selection expert. You must respond with EXACTLY the required JSON format.
-
-CRITICAL: You MUST only select model IDs from the provided list. Do not make up or modify any model IDs.
-
-Selection criteria (in order of importance):
-1. QUALITY: Higher quality scores indicate better models
-2. RELEVANCE: How well the model matches the user's specific needs  
-3. IMAGE REQUIREMENTS: NEVER select models requiring images when user hasn't provided one
-4. SPECIALIZATION: Prefer models specialized for the task
-
-For image generation, Flux models are generally highest quality:
-- flux/dev: Best balance of quality and speed
-- flux-pro: Maximum quality but slower
-- flux/schnell: Fastest option
-- flux-kontext: Best for complex, detailed prompts`,
-
-      schema: z.object({
-        selectedModels: z.array(z.enum(validModelIds as [string, ...string[]])).max(3).describe("Array of exactly 3 model IDs from the provided list, in order of preference"),
-        reasoning: z.string().min(10).max(200).describe("Brief explanation of why these models were selected")
-      }),
-
-      messages: [
-        {
-          role: "user",
-          content: `User request: "${userQuery}"
-Has image input: ${hasImageInput ? 'YES' : 'NO'}
-
-Available models (select ONLY from these IDs):
-${modelDescriptions}
-
-Return exactly 3 model IDs from the list above, prioritizing quality and relevance. ${!hasImageInput ? 'IMPORTANT: Do not select any models that require image input.' : ''}`
-        }
-      ],
-      maxRetries: 2,
-    });
-
-    const result = await stream.object;
-
-    if (!result || !result.selectedModels || result.selectedModels.length === 0) {
-      console.warn('🔄 LLM selection returned empty results, falling back to quality sorting');
-      return candidateModels
-        .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
-        .slice(0, 3);
-    }
-
-    console.log(`🤖 LLM Selection Reasoning: ${result.reasoning}`);
-
-    // Return models in the LLM's preferred order, with validation
-    const selectedModels = result.selectedModels
-      .map((id: string) => candidateModels.find(model => model.id === id))
-      .filter(Boolean);
-
-    if (selectedModels.length === 0) {
-      console.warn('🔄 No valid models found in LLM selection, falling back');
-      return candidateModels
-        .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
-        .slice(0, 3);
-    }
-
-    return selectedModels;
-
-  } catch (error) {
-    console.error('❌ Error in LLM model selection:', error);
-    console.log('🔄 Falling back to quality-based sorting');
-
-    // Robust fallback to quality-based sorting
-    return candidateModels
-      .filter(model => !model.requiresImage || hasImageInput) // Filter out image models if no image
-      .sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0))
-      .slice(0, 3);
-  }
-}
 
 // Helper function to search fal.ai models
 async function searchFalModels(userQuery: string, maxResults: number = 3, writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
@@ -471,7 +384,7 @@ async function fetchModelOpenAPI(modelId: string) {
       const cachedValue = await redis.get(cacheKey);
       if (cachedValue) {
         const cachedSpec = cachedValue;
-        console.log(`🎯 Cache hit for OpenAPI spec: ${modelId}`);
+        // console.log(`🎯 Cache hit for OpenAPI spec: ${modelId}`);
         return cachedSpec;
       }
     } catch (cacheError) {
@@ -719,10 +632,10 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: 
     // Convert the resolved schema to Zod
     const zodSchema = jsonSchemaToZod(resolvedSchema);
 
-    console.log('Zod schema created for:', modelInfo.id);
+    // console.log('Zod schema created for:', modelInfo.id);
 
     // Transform the schema into Vercel AI SDK tool format using Zod
-    const tool = {
+    const my_tool = tool({
       description: `${modelInfo.title}: ${modelInfo.description}`,
       inputSchema: zodSchema,
       execute: async (parameters: any, { toolCallId }) => {
@@ -738,23 +651,27 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: 
 
         // modelInfo.id
         try {
+          console.log("modelInfo.id", modelInfo.id);
           const result = await fal.subscribe(modelInfo.id, {
             input: parameters,
+            // mode: "polling",
             logs: true,
             onQueueUpdate: (update) => {
-              if (update.status === "IN_PROGRESS") {
-                writer.write({
-                  type: "data-tool-log",
-                  id: toolCallId as string,
-                  data: {
-                    log: update.logs.map((log) => log.message).join("\n"),
-                  }
-                })
-                // update.logs.map((log) => log.message).forEach(console.log);
-              }
+              console.log("update", JSON.stringify(update, null, 2));
+              // if (update.status === "IN_PROGRESS") {
+              //   writer.write({
+              //     type: "data-tool-log",
+              //     id: toolCallId as string,
+              //     data: {
+              //       log: update.logs.map((log) => log.message).join("\n"),
+              //     }
+              //   })
+              //   update.logs.map((log) => log.message).forEach(console.log);
+              // }
             },
           });
 
+          // console.log(result);
 
           const images = result.data?.images?.map((image: any) => ({
             type: "image",
@@ -777,10 +694,10 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: 
           throw error;
         }
       }
-    };
+    });
 
-    console.log(`✅ Successfully created tool: ${toolName} for model ${modelInfo.id} using Zod schema`);
-    return { [toolName]: tool };
+    // console.log(`✅ Successfully created tool: ${toolName} for model ${modelInfo.id} using Zod schema`);
+    return { [toolName]: my_tool };
   } catch (error) {
     console.error(`Error creating tool for model ${modelInfo.id}:`, error);
     return null;
@@ -866,6 +783,48 @@ export const webSearch = tool({
   },
 });
 
+export const crawlUrl = tool({
+  description: 'Crawl and extract content from specific URLs',
+  inputSchema: z.object({
+    urls: z.array(z.string().url()).min(1).max(5).describe('Array of URLs to crawl (max 5 URLs)'),
+    maxCharacters: z.number().min(100).max(5000).default(2000).describe('Maximum characters to return per URL'),
+  }),
+  execute: async ({ urls, maxCharacters }, { toolCallId }) => {
+    console.log("Crawling URLs:", urls);
+
+    try {
+      const { results } = await exa.getContents(urls, {
+        livecrawl: 'always',
+        text: {
+          includeHtmlTags: false,
+          maxCharacters: maxCharacters * urls.length, // Total budget across all URLs
+        },
+      });
+
+      return results.map((content, index) => ({
+        url: urls[index],
+        title: content.title || 'Unknown Title',
+        content: content.text ? content.text.slice(0, maxCharacters) : 'No content available',
+        extractedAt: new Date().toISOString(),
+        success: !!content.text,
+        author: content.author,
+        publishedDate: content.publishedDate,
+      }));
+    } catch (error) {
+      console.error("Error crawling URLs:", error);
+      
+      // Return error information for each URL
+      return urls.map(url => ({
+        url,
+        title: 'Error',
+        content: `Failed to crawl URL: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        extractedAt: new Date().toISOString(),
+        success: false,
+      }));
+    }
+  },
+});
+
 export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) => tool({
   description: "Use a fal.ai model to create an image or video, 3d models, or even more, based on the user's prompt",
   inputSchema: z.object({
@@ -898,10 +857,10 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
   description: "Use predefined high-quality fal.ai models for image generation, video creation, and upscaling",
   inputSchema: z.object({
     prompt: z.string(),
-    image_url: z.string().optional().describe('An image url to use for the model'),
+    image_url: z.string().optional().describe('An image url to use for the generation'),
     category: z.enum(['image', 'image_editing', 'video', 'upscaling', 'any']).optional().describe('Preferred model category, defaults to any'),
   }),
-  execute: async ({ prompt, category = 'any' }, { toolCallId }) => {
+  execute: async ({ prompt, image_url, category = 'any' }, { toolCallId }) => {
     console.log(`Using default fal.ai models for: ${prompt} (category: ${category})`);
 
     // Get default model tools
@@ -925,16 +884,17 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
     console.log(`🎯 Using ${Object.keys(filteredTools).length} default model tools for category: ${category}`);
 
+    // Include image URL in the prompt if provided
+    const fullPrompt = image_url 
+      ? `${prompt}\n\nImage URL to use: ${image_url}`
+      : prompt;
+
     const stream = await streamText({
       model: "anthropic/claude-4-sonnet",
-      system: `You are a creative agent using high-quality predefined models. You have access to these categories:
-      - Image generation: flux/dev, flux/schnell (fast and high quality)
-      - Image editing: flux-kontext (complex prompts and context)
-      - Video generation: runway-gen3/turbo, luma-dream-machine
-      - Upscaling: clarity-upscaler, real-esrgan
+      system: `You are a creative agent using high-quality predefined models.
       
-      Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.`,
-      prompt: prompt,
+      Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.${image_url ? ' An image URL has been provided for use with image-to-image/editing models.' : ''}`,
+      prompt: fullPrompt,
       maxRetries: 3,
       tools: filteredTools,
     })
@@ -945,11 +905,13 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
       console.error("Error consuming stream:", error);
     } })
 
-    return Object.keys(filteredTools);
+    return "Done";
   }
 });
 
-function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+  const defaultTools = await createDefaultModelTools(writer);
+
   return streamText({
     model: "anthropic/claude-4-sonnet",
     system: `You are a creative agent with access to multiple fal.ai model tools:
@@ -957,20 +919,26 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     1. **default_models**: Use predefined high-quality models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
     2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
     3. **webSearch**: Search the web for up-to-date information
+    4. **crawlUrl**: Extract content from specific URLs when users provide links or when you need to analyze specific pages
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
     2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
     3. For specialized or unusual requests, use **model_search** to find specific models
     4. If unclear about the request, use **webSearch** first
-    5. Plan multiple steps for complex tasks and execute them systematically
-    6. Always choose the most appropriate tool for the task`,
+    5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
+    6. Plan multiple steps for complex tasks and execute them systematically
+    7. Always choose the most appropriate tool for the task
+    8. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
+    `,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
     maxRetries: 3,
     tools: {
       webSearch,
-      default_models: defaultFalTools(writer),
+      crawlUrl,
+      // default_models: defaultFalTools(writer),
+      ...defaultTools,
       model_search: falTools(writer),
     },
   });
@@ -1140,10 +1108,13 @@ async function startServer() {
                 //   });
                 //   await new Promise(resolve => setTimeout(resolve, 1000));
                 // }
-                writer.merge(createAIStream(messages, writer).toUIMessageStream())
+                const stream = await createAIStream(messages, writer);
+                writer.merge(stream.toUIMessageStream())
+
+                // await stream.consumeStream();
               },
               onFinish: async (message) => {
-                console.log("onFinish", message);
+                // console.log("onFinish", message);
                 // Only append the AI's response messages, not the entire conversation
                 await appendMessagesToChat(id, message.messages);
 
