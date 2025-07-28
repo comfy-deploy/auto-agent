@@ -102,15 +102,15 @@ const defaultModels = {
     "fal-ai/flux-kontext": "Complex image generation model",
   },
   video: {
-    "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
+    "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
     "fal-ai/luma-dream-machine/image-to-video": "High quality video generation model",
+    "fal-ai/runway-gen3/turbo/image-to-video": "Fast video generation model",
   },
   upscaling: {
     "fal-ai/clarity-upscaler": "High quality upscaling model",
     "fal-ai/real-esrgan": "High quality upscaling model",
   },
 }
-
 
 
 import Exa from 'exa-js';
@@ -150,17 +150,6 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
 
   // 3D
   'fal-ai/triposr': 85,
-};
-
-// Category    for different use cases
-const CATEGORY_PREFERENCES = {
-  'photorealistic': ['fal-ai/flux/dev', 'fal-ai/flux-realism', 'fal-ai/imagen4/preview'],
-  'artistic': ['fal-ai/flux/schnell', 'fal-ai/recraft-v3', 'fal-ai/imagen4/preview'],
-  'complex_prompts': ['fal-ai/flux-kontext', 'fal-ai/flux/dev', 'fal-ai/imagen4/preview'], // For detailed, complex descriptions
-  'fast': ['fal-ai/flux/schnell', 'fal-ai/sdxl'],
-  'highest_quality': ['fal-ai/flux-pro', 'fal-ai/imagen4/preview', 'fal-ai/flux/dev', 'fal-ai/flux-kontext'],
-  'video': ['fal-ai/runway-gen3/turbo/image-to-video', 'fal-ai/luma-dream-machine'],
-  'upscaling': ['fal-ai/clarity-upscaler', 'fal-ai/real-esrgan'],
 };
 
 // Helper function to use LLM for intelligent model selection
@@ -955,6 +944,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
   description: "Use predefined high-quality fal.ai models for image generation, video creation, and upscaling",
   inputSchema: z.object({
     prompt: z.string(),
+    image_url: z.string().optional().describe('An image url to use for the model'),
     category: z.enum(['image', 'image_editing', 'video', 'upscaling', 'any']).optional().describe('Preferred model category, defaults to any'),
   }),
   execute: async ({ prompt, category = 'any' }, { toolCallId }) => {
@@ -1018,13 +1008,7 @@ function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage
     3. For specialized or unusual requests, use **model_search** to find specific models
     4. If unclear about the request, use **webSearch** first
     5. Plan multiple steps for complex tasks and execute them systematically
-    6. Always choose the most appropriate tool for the task
-
-    **Default Model Categories:**
-    - Image: flux/dev (best quality), flux/schnell (fastest)
-    - Image Editing: flux-kontext (complex prompts)
-    - Video: runway-gen3/turbo (fast), luma-dream-machine (high quality)
-    - Upscaling: clarity-upscaler, real-esrgan`,
+    6. Always choose the most appropriate tool for the task`,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
     maxRetries: 3,

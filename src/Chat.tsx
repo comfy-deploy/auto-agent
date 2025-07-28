@@ -384,7 +384,7 @@ export function Chat(props: {
                       <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
                       <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
                     </div>
-                    <span className="text-sm text-muted-foreground">Thinking...</span>
+                    <span className="text-muted-foreground">Thinking...</span>
                   </div>
                 </div>
               </div>
@@ -441,7 +441,7 @@ export function Chat(props: {
                           )}
                             onClick={() => isCompleted && toggleToolCollapse(toolId)}
                           >
-                            <div className="text-sm flex flex-col items-start">
+                            <div className="flex flex-col items-start">
                               <div className={cn(
                                 "font-medium flex items-center gap-1",
                                 isCompleted ? "text-green-700" : "text-orange-700",
@@ -563,18 +563,18 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <div className="text-sm whitespace-pre-wrap text-start break-words">
+                            <div className="whitespace-pre-wrap text-start break-words">
                               {part.text}
                             </div>
                           </div>
 
-                          {message.role === "user" && (
+                          {/* {message.role === "user" && (
                             <div className="flex-shrink-0 w-6 h-6 bg-muted rounded-full flex items-center justify-center">
                               <svg className="w-3 h-3 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                               </svg>
                             </div>
-                          )}
+                          )} */}
                         </div>
                       );
                     }
@@ -633,7 +633,7 @@ export function Chat(props: {
                 className={cn(
                   "flex-1 min-h-[40px] max-h-[200px] bg-background",
                   "border-input rounded-md pr-3 py-2",
-                  "text-sm placeholder:text-muted-foreground",
+                  "placeholder:text-muted-foreground",
                   "focus-visible:outline-none ",
                   "resize-none",
                   isLoading && "opacity-50 cursor-not-allowed"

@@ -57,23 +57,21 @@ export function App() {
   }
 
   return (
-    <div className="w-screen flex flex-col overflow-hidden" style={{ height: '100vh', height: '100dvh' }}>
+    <div className="w-screen flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Conditionally render header with animation */}
-      <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${
-        hasMessages 
-          ? 'translate-y-0 opacity-100' 
+      <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${hasMessages
+          ? 'translate-y-0 opacity-100'
           : '-translate-y-full opacity-0 pointer-events-none'
-      }`}>
+        }`}>
         <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} />
       </div>
-      
-      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${
-        hasMessages ? '' : 'pt-0'
-      }`}>
-        <Chat 
-          key={chatId} 
-          initialMessages={messages} 
-          chatId={chatId} 
+
+      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'
+        }`}>
+        <Chat
+          key={chatId}
+          initialMessages={messages}
+          chatId={chatId}
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
         />
