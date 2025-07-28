@@ -58,7 +58,7 @@ export function App() {
   }
 
   return (
-    <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "")}>
+    <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
       {/* Conditionally render header with animation */}
       <div className={`sticky top-0 z-20 transition-all duration-500 ease-out ${hasMessages
           ? 'translate-y-0 opacity-100'
