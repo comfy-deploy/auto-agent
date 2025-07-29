@@ -7,6 +7,16 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 
+// TypeScript declaration for globalThis extension
+declare global {
+  var appState: {
+    activeStreams: Set<string>; // Changed from number to Set<string>
+    isShuttingDown: boolean;
+    shutdownInProgress: boolean;
+    gracefulShutdownSetup: boolean;
+  };
+}
+
 // Initialize Redis asynchronously
 
 export const MessageType = {
@@ -92,6 +102,56 @@ let redis: Redis;
 // redis = new RedisClient(process.env.REDIS_URL);
 redis = Redis.fromEnv()
 console.log(`🗄️  Redis initialized successfully`);
+
+// Use globalThis to preserve state across hot reloads
+if (!globalThis.appState) {
+  globalThis.appState = {
+    activeStreams: new Set<string>(), // Changed from number to Set<string>
+    isShuttingDown: false,
+    shutdownInProgress: false,
+    gracefulShutdownSetup: false,
+  };
+  console.log('🔄 Initializing new app state');
+} else {
+  console.log(`🔄 Reusing existing app state (${globalThis.appState.activeStreams.size} streams, shutdown: ${globalThis.appState.gracefulShutdownSetup})`);
+}
+
+let server: any = null;
+
+// Stream tracking utilities
+function incrementActiveStreams(streamId: string) {
+  globalThis.appState.activeStreams.add(streamId);
+  console.log(`📈 Active streams: ${globalThis.appState.activeStreams.size} (+${streamId})`);
+}
+
+function decrementActiveStreams(streamId: string) {
+  globalThis.appState.activeStreams.delete(streamId);
+  console.log(`📉 Active streams: ${globalThis.appState.activeStreams.size} (-${streamId})`);
+
+  // If shutting down and no more active streams, proceed with shutdown
+  if (globalThis.appState.isShuttingDown && globalThis.appState.activeStreams.size === 0 && !globalThis.appState.shutdownInProgress) {
+    console.log('✅ All streams completed, proceeding with shutdown...');
+    process.exit(0);
+  }
+}
+
+// Helper functions for better stream management
+function getActiveStreamIds(): string[] {
+  return Array.from(globalThis.appState.activeStreams);
+}
+
+function logActiveStreams() {
+  const activeIds = getActiveStreamIds();
+  if (activeIds.length > 0) {
+    console.log(`🔍 Active streams (${activeIds.length}): ${activeIds.join(', ')}`);
+  } else {
+    console.log('🔍 No active streams');
+  }
+}
+
+function hasActiveStream(streamId: string): boolean {
+  return globalThis.appState.activeStreams.has(streamId);
+}
 
 const defaultModels = {
   image: {
@@ -813,7 +873,7 @@ export const crawlUrl = tool({
       }));
     } catch (error) {
       console.error("Error crawling URLs:", error);
-      
+
       // Return error information for each URL
       return urls.map(url => ({
         url,
@@ -886,7 +946,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
     console.log(`🎯 Using ${Object.keys(filteredTools).length} default model tools for category: ${category}`);
 
     // Include image URL in the prompt if provided
-    const fullPrompt = image_url 
+    const fullPrompt = image_url
       ? `${prompt}\n\nImage URL to use: ${image_url}`
       : prompt;
 
@@ -902,9 +962,11 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
     writer.merge(stream.toUIMessageStream());
 
-    await consumeStream({ stream: stream.fullStream, onError: (error) => {
-      console.error("Error consuming stream:", error);
-    } })
+    await consumeStream({
+      stream: stream.fullStream, onError: (error) => {
+        console.error("Error consuming stream:", error);
+      }
+    })
 
     return "Done";
   }
@@ -1017,7 +1079,11 @@ async function startServer() {
   // Initialize Redis first
   // await initializeRedis();
 
-  const server = serve({
+  // Reset shutdown state on hot reload
+  globalThis.appState.isShuttingDown = false;
+  globalThis.appState.shutdownInProgress = false;
+
+  server = serve({
     idleTimeout: 200,
     routes: {
       // Serve index.html for all unmatched routes.
@@ -1028,6 +1094,18 @@ async function startServer() {
           "Content-Type": "application/octet-stream",
         },
       }),
+
+      // Add health check endpoint
+      "/api/health": {
+        async GET() {
+          return Response.json({
+            status: globalThis.appState.isShuttingDown ? 'shutting_down' : 'healthy',
+            activeStreams: globalThis.appState.activeStreams.size,
+            activeStreamIds: getActiveStreamIds(), // Include actual stream IDs
+            uptime: process.uptime(),
+          });
+        }
+      },
 
       "/api/chat/new": {
         async POST(req) {
@@ -1058,7 +1136,7 @@ async function startServer() {
                 if (messages.length === 0) {
                   return null;
                 }
-                
+
                 const parsedMessages = messages.map(msg => {
                   try {
                     return typeof msg === 'string' ? JSON.parse(msg) : msg;
@@ -1066,11 +1144,11 @@ async function startServer() {
                     return msg;
                   }
                 });
-                
+
                 // Get the first user message as the title
                 const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
                 let title = 'Example Chat';
-                
+
                 if (firstUserMessage) {
                   // Extract text from parts array if it exists
                   if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
@@ -1086,7 +1164,7 @@ async function startServer() {
                     title = firstUserMessage.content;
                   }
                 }
-                
+
                 // Extract images from assistant messages
                 const images: string[] = [];
                 parsedMessages.forEach(msg => {
@@ -1105,27 +1183,27 @@ async function startServer() {
                     });
                   }
                 });
-                
+
                 // Get a preview of the conversation (simplified for badge display)
                 const preview = parsedMessages
                   .filter(msg => msg.role === 'user' || msg.role === 'assistant')
                   .slice(0, 2) // First 2 messages for preview
                   .map(msg => {
                     let text = '';
-                    
+
                     if (msg.parts && Array.isArray(msg.parts)) {
                       const textPart = msg.parts.find(part => part.type === 'text');
                       text = textPart?.text || '';
                     } else {
                       text = msg.text || msg.content || '';
                     }
-                    
+
                     return {
                       role: msg.role,
                       text: text.length > 40 ? text.substring(0, 40) + '...' : text
                     };
                   });
-                
+
                 return {
                   id: chatId,
                   title: title.length > 35 ? title.substring(0, 35) + '...' : title,
@@ -1135,10 +1213,10 @@ async function startServer() {
                 };
               })
             );
-            
+
             // Filter out null results (chats that don't exist)
             const validExamples = examples.filter(example => example !== null);
-            
+
             return Response.json(validExamples);
           } catch (error) {
             console.error('Error fetching example chats:', error);
@@ -1162,6 +1240,14 @@ async function startServer() {
 
         async POST(req) {
           try {
+            // Reject new streams if shutting down
+            if (globalThis.appState.isShuttingDown) {
+              return Response.json(
+                { error: "Server is shutting down" },
+                { status: 503 }
+              );
+            }
+
             const body = await req.json();
             // console.log("body", body);
             const { messages, id } = body;
@@ -1245,8 +1331,10 @@ async function startServer() {
             // Create a tee to read the stream while also returning it
             const [streamForReading, streamForResponse] = stream.tee();
 
-            // Process chunks from one branch of the stream
+            // Track this stream and process chunks from one branch of the stream
+
             (async () => {
+              incrementActiveStreams(streamId);
               try {
                 const reader = streamForReading.getReader();
                 while (true) {
@@ -1274,8 +1362,12 @@ async function startServer() {
                   }
                 }
                 reader.releaseLock();
+                console.log("streamId", streamId, "done");
               } catch (error) {
                 console.error('Error processing stream chunks:', error);
+              } finally {
+                // Always decrement when stream processing ends
+                decrementActiveStreams(streamId);
               }
             })();
 
@@ -1451,7 +1543,64 @@ async function startServer() {
     development: process.env.NODE_ENV !== "production",
   });
 
+  // Set up graceful shutdown handlers only once
+  if (!globalThis.appState.gracefulShutdownSetup) {
+    setupGracefulShutdown();
+    globalThis.appState.gracefulShutdownSetup = true;
+  } else {
+    console.log('🛡️  Graceful shutdown handlers already set up (hot reload)');
+  }
+
   console.log(`🚀 Server running at ${server.url}`);
+}
+
+// Graceful shutdown setup
+function setupGracefulShutdown() {
+  console.log('🛡️  Setting up graceful shutdown handlers...');
+
+  const shutdown = async (signal: string) => {
+    // Prevent multiple shutdown attempts
+    if (globalThis.appState.shutdownInProgress) {
+      console.log(`⚠️  Shutdown already in progress, ignoring ${signal}`);
+      return;
+    }
+
+    globalThis.appState.shutdownInProgress = true;
+    console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
+    globalThis.appState.isShuttingDown = true;
+
+    console.log(`📊 Currently ${globalThis.appState.activeStreams.size} active streams`);
+    if (globalThis.appState.activeStreams.size > 0) {
+      console.log('⏳ Waiting for active streams to complete...');
+      logActiveStreams(); // Log which specific streams are active
+
+      // Set a maximum wait time (e.g., 30 seconds)
+      const maxWaitTime = 30000;
+      const startTime = Date.now();
+
+      while (globalThis.appState.activeStreams.size > 0 && (Date.now() - startTime) < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log(`⏱️  Still waiting... ${globalThis.appState.activeStreams.size} streams active: ${getActiveStreamIds().join(', ')}`);
+      }
+
+      if (globalThis.appState.activeStreams.size > 0) {
+        console.log(`⚠️  Force shutdown after ${maxWaitTime}ms, ${globalThis.appState.activeStreams.size} streams still active: ${getActiveStreamIds().join(', ')}`);
+      }
+    }
+
+    console.log('🔌 Closing server...');
+    if (server && server.stop) {
+      await server.stop();
+    }
+
+    console.log('✅ Graceful shutdown complete');
+    process.exit(0);
+  };
+
+  // Handle different shutdown signals
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGUSR2', () => shutdown('SIGUSR2')); // nodemon restart
 }
 
 // Start the server
