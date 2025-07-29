@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
+import { Ratelimit } from "@upstash/ratelimit";
 
 // TypeScript declaration for globalThis extension
 declare global {
@@ -101,7 +102,38 @@ let redis: Redis;
 
 // redis = new RedisClient(process.env.REDIS_URL);
 redis = Redis.fromEnv()
+
+const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, "1 d"),
+  prefix: "daily_message_limit"
+});
+
 console.log(`🗄️  Redis initialized successfully`);
+
+// Helper function to extract IP address from request
+function getClientIP(req: Request): string {
+  // Check various headers that might contain the real IP
+  const forwarded = req.headers.get('x-forwarded-for');
+  const realIP = req.headers.get('x-real-ip');
+  const cfConnectingIP = req.headers.get('cf-connecting-ip'); // Cloudflare
+  
+  if (forwarded) {
+    // x-forwarded-for can contain multiple IPs, take the first one
+    return forwarded.split(',')[0].trim();
+  }
+  
+  if (realIP) {
+    return realIP;
+  }
+  
+  if (cfConnectingIP) {
+    return cfConnectingIP;
+  }
+  
+  // Fallback - this might not work in all deployment environments
+  return 'unknown';
+}
 
 // Use globalThis to preserve state across hot reloads
 if (!globalThis.appState) {
@@ -1103,6 +1135,11 @@ async function startServer() {
             activeStreams: globalThis.appState.activeStreams.size,
             activeStreamIds: getActiveStreamIds(), // Include actual stream IDs
             uptime: process.uptime(),
+            rateLimiting: {
+              enabled: true,
+              dailyLimit: 10,
+              windowSize: "1 day"
+            }
           });
         }
       },
@@ -1247,6 +1284,34 @@ async function startServer() {
                 { status: 503 }
               );
             }
+
+            // Rate limiting check
+            const clientIP = getClientIP(req);
+            console.log(`🔒 Checking rate limit for IP: ${clientIP}`);
+            
+            const { success, limit, remaining, reset } = await ratelimit.limit(clientIP);
+            
+            if (!success) {
+              console.log(`🚫 Rate limit exceeded for IP: ${clientIP}`);
+              return Response.json(
+                { 
+                  error: "Daily message limit exceeded. You can send up to 10 messages per day.",
+                  limit,
+                  remaining,
+                  resetTime: new Date(reset).toISOString()
+                },
+                { 
+                  status: 429,
+                  headers: {
+                    'X-RateLimit-Limit': limit.toString(),
+                    'X-RateLimit-Remaining': remaining.toString(),
+                    'X-RateLimit-Reset': reset.toString()
+                  }
+                }
+              );
+            }
+            
+            console.log(`✅ Rate limit check passed for IP: ${clientIP} (${remaining}/${limit} remaining)`);
 
             const body = await req.json();
             // console.log("body", body);

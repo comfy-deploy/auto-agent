@@ -10,6 +10,7 @@ import { StrictMode } from "react";
 import { App } from "./App";
 import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from "@/components/ui/sonner"
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const app = (
     <NuqsAdapter>
       <QueryClientProvider client={queryClient}>
         <App />
+        <Toaster />
       </QueryClientProvider>
     </NuqsAdapter>
   </StrictMode>
