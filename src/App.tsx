@@ -7,6 +7,7 @@ import type { UIMessage } from "ai";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { cn } from "./lib/utils";
 import { isReadOnlyChat } from "./lib/constants";
+import { trackChatEvent } from "./lib/analytics";
 
 export function App() {
   const [chatId, setChatId] = useQueryState('chatId', { 
@@ -40,6 +41,7 @@ export function App() {
       return response.json();
     },
     onSuccess: (data) => {
+      trackChatEvent('start_chat');
       setChatId(data.chatId);
     }
   });

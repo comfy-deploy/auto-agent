@@ -11,6 +11,7 @@ import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
 import { isReadOnlyChat } from "@/lib/constants";
+import { trackChatEvent } from "@/lib/analytics";
 
 export function Chat(props: {
   initialMessages: UIMessage[];
@@ -47,6 +48,7 @@ export function Chat(props: {
   useEffect(() => {
     if (prompt && props.chatId && lastSentPrompt.current !== prompt && !isReadOnly) {
       lastSentPrompt.current = prompt;
+      trackChatEvent('send_message');
       sendMessage({
         role: "user",
         text: prompt,
@@ -63,6 +65,7 @@ export function Chat(props: {
       return response.json();
     },
     onSuccess: (data) => {
+      trackChatEvent('start_chat');
       setChatId(data.chatId);
     }
   });
@@ -250,6 +253,7 @@ export function Chat(props: {
     }
 
     if (promptInputRef.current?.value.trim()) {
+      trackChatEvent('send_message');
       sendMessage({
         role: "user",
         text: promptInputRef.current?.value,
@@ -418,7 +422,10 @@ export function Chat(props: {
                 {exampleChats.map((example: any) => (
                   <button
                     key={example.id}
-                    onClick={() => setChatId(example.id)}
+                    onClick={() => {
+                      trackChatEvent('view_example');
+                      setChatId(example.id);
+                    }}
                     className="inline-flex items-center gap-2 p-3 bg-background border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all duration-200 group max-w-xs"
                   >
                     {/* Images Preview */}
