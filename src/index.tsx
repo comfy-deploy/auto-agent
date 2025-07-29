@@ -1032,6 +1032,13 @@ async function startServer() {
         async POST(req) {
           const chatId = generateId(); // generate a unique chat ID
 
+          // Prevent creating new chats with example IDs
+          const exampleChatIds = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
+          if (exampleChatIds.includes(chatId)) {
+            // If by some coincidence we generate an example ID, generate a new one
+            return this.POST(req);
+          }
+
           // const { messages } = await req.json();
 
           // No need to initialize empty list, Redis lists start empty

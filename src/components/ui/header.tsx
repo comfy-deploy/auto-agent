@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "./button";
-import { Plus } from "lucide-react";
+import { Plus, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/components/icon.svg";
 import { Logo } from "./logo";
@@ -9,10 +9,11 @@ interface HeaderProps {
   onNewChat?: () => void;
   isCreatingChat?: boolean;
   isListening?: boolean;
+  isReadOnly?: boolean;
   className?: string;
 }
 
-export function Header({ onNewChat, isCreatingChat, isListening = false, className }: HeaderProps) {
+export function Header({ onNewChat, isCreatingChat, isListening = false, isReadOnly = false, className }: HeaderProps) {
   return (
     <header className={cn(
       "w-full border-b border-border/40 bg-background/80 backdrop-blur-sm",
@@ -23,6 +24,12 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, classNa
         <Logo isListening={isListening} static={true}/>
         <div className="flex items-center justify-center gap-2">
           <h1 className="text-lg font-semibold text-foreground ">Auto</h1>
+          {isReadOnly && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-orange-100 border border-orange-200 rounded-md">
+              <Eye className="w-3 h-3 text-orange-600" />
+              <span className="text-xs font-medium text-orange-700">Read-only Example</span>
+            </div>
+          )}
         </div>
       </div>
 

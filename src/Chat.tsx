@@ -3,12 +3,15 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download, MessageSquare } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
+
+// Define read-only example chat IDs
+const READ_ONLY_EXAMPLE_CHAT_IDS = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
 
 export function Chat(props: {
   initialMessages: UIMessage[];
@@ -27,6 +30,9 @@ export function Chat(props: {
 
   console.log("props.chatId", props.chatId);
 
+  // Check if current chat is read-only (example chat)
+  const isReadOnlyChat = READ_ONLY_EXAMPLE_CHAT_IDS.includes(props.chatId);
+
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
     id: props.chatId,
@@ -40,7 +46,7 @@ export function Chat(props: {
   }, [messages.length, props.onMessagesChange]);
 
   useEffect(() => {
-    if (prompt && props.chatId && lastSentPrompt.current !== prompt) {
+    if (prompt && props.chatId && lastSentPrompt.current !== prompt && !isReadOnlyChat) {
       lastSentPrompt.current = prompt;
       sendMessage({
         role: "user",
@@ -48,7 +54,7 @@ export function Chat(props: {
       });
       setPrompt(null);
     }
-  }, [prompt, props.chatId]);
+  }, [prompt, props.chatId, isReadOnlyChat]);
 
   const { mutateAsync: createChat, isPending: isCreatingChat } = useMutation<{ chatId: string }>({
     mutationFn: async () => {
@@ -83,6 +89,7 @@ export function Chat(props: {
 
   useEffect(() => {
     if (!props.chatId) return;
+    if (isReadOnlyChat) return; // Don't resume for read-only chats
 
     if (!isLastMessageFromUser) {
       return;
@@ -94,7 +101,7 @@ export function Chat(props: {
     }
     // We want to disable the exhaustive deps rule here because we only want to run this effect once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLastMessageFromUser]);
+  }, [isLastMessageFromUser, isReadOnlyChat]);
 
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
@@ -233,6 +240,9 @@ export function Chat(props: {
   };
 
   const handleSubmit = () => {
+    // Prevent submission for read-only chats
+    if (isReadOnlyChat) return;
+
     if (!props.chatId) {
       createChat().then(({ chatId }) => {
         setPrompt(promptInputRef.current?.value);
@@ -247,6 +257,35 @@ export function Chat(props: {
       });
       promptInputRef.current.value = "";
       setPromptInputValue("");
+    }
+  };
+
+  // Handle "Try now" functionality for read-only chats
+  const handleTryNow = () => {
+    // Get the first user message from the current chat
+    const firstUserMessage = messages.find(msg => msg.role === "user");
+    if (firstUserMessage) {
+      // Extract text from parts array
+      let initialPrompt = '';
+      if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+        const textPart = firstUserMessage.parts.find((part: any) => part.type === 'text');
+        if (textPart && textPart.text) {
+          initialPrompt = textPart.text;
+        }
+      }
+
+      // Create new chat and set the initial prompt
+      if (initialPrompt) {
+        createChat().then(({ chatId }) => {
+          setPrompt(initialPrompt);
+        });
+      } else {
+        // If no text found, just create a new chat
+        createChat();
+      }
+    } else {
+      // If no user message found, just create a new chat
+      createChat();
     }
   };
 
@@ -374,7 +413,7 @@ export function Chat(props: {
           {exampleChats.length > 0 && (
             <div className="mt-6 w-full max-w-2xl transition-all duration-500 ease-out delay-300">
               <p className="text-sm text-muted-foreground mb-3 text-center">
-                Try these examples
+                Get inspired by these creations
               </p>
               <div className="flex flex-wrap gap-2 justify-center">
                 {exampleChats.map((example: any) => (
@@ -681,67 +720,109 @@ export function Chat(props: {
               mediaItems.length == 0 ? "pt-2" : "pb-0",
             )
           }>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }} className="flex items-center gap-2 px-2">
-              {!isLoading && hasMessages && (
-                <div className="flex-shrink-0 flex items-center justify-center">
-                  <Logo size={30} isListening={false} static={false} />
+            {isReadOnlyChat ? (
+              // Read-only mode: Show "Try now" button
+              <div className="px-2">
+                <div className="flex items-center justify-between gap-4 py-3">
+                  <div className="flex-1 text-left">
+                    <p className="text-sm text-muted-foreground font-medium">
+                      This is a read-only example
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Create your own version to continue the conversation
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleTryNow}
+                    disabled={isCreatingChat}
+                    className="flex items-center gap-2 rounded-full px-4 py-2 flex-shrink-0"
+                  >
+                    {isCreatingChat ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4" />
+                        <span>Try now</span>
+                      </>
+                    )}
+                  </Button>
                 </div>
-              )}
-              <textarea
-                ref={promptInputRef}
-                name="prompt"
-                placeholder="What do you want to create?"
-                onKeyDown={handleKeyDown}
-                disabled={isLoading}
-                rows={1}
-                value={promptInputValue}
-                onChange={(e) => setPromptInputValue(e.target.value)}
-                className={cn(
-                  "flex-1 min-h-[40px] max-h-[200px] bg-background",
-                  "border-input rounded-md pr-3 py-2",
-                  "placeholder:text-muted-foreground",
-                  "focus-visible:outline-none ",
-                  "resize-none",
-                  isLoading && "opacity-50 cursor-not-allowed"
-                )}
-                style={{
-                  height: 'auto',
-                  minHeight: '40px'
-                }}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = 'auto';
-                  target.style.height = Math.min(target.scrollHeight, 200) + 'px';
-                }}
-                required
-              />
+                
+                {/* Disclaimer notices */}
+                <div className="pb-1">
+                  <p className="text-xs text-muted-foreground text-center break-words">
+                    This is a research preview. Your chat data is public and AI can make mistakes.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              // Regular mode: Show input form
+              <>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSubmit();
+                }} className="flex items-center gap-2 px-2">
+                  {!isLoading && hasMessages && (
+                    <div className="flex-shrink-0 flex items-center justify-center">
+                      <Logo size={30} isListening={false} static={false} />
+                    </div>
+                  )}
+                  <textarea
+                    ref={promptInputRef}
+                    name="prompt"
+                    placeholder="What do you want to create?"
+                    onKeyDown={handleKeyDown}
+                    disabled={isLoading}
+                    rows={1}
+                    value={promptInputValue}
+                    onChange={(e) => setPromptInputValue(e.target.value)}
+                    className={cn(
+                      "flex-1 min-h-[40px] max-h-[200px] bg-background",
+                      "border-input rounded-md pr-3 py-2",
+                      "placeholder:text-muted-foreground",
+                      "focus-visible:outline-none ",
+                      "resize-none",
+                      isLoading && "opacity-50 cursor-not-allowed"
+                    )}
+                    style={{
+                      height: 'auto',
+                      minHeight: '40px'
+                    }}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = 'auto';
+                      target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+                    }}
+                    required
+                  />
 
-              <Button
-                type="submit"
-                className="rounded-full"
-                disabled={isLoading || !promptInputValue.trim()}
-                size="icon"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  </>
-                ) : (
-                  <ArrowUp />
-                )}
-              </Button>
-            </form>
+                  <Button
+                    type="submit"
+                    className="rounded-full"
+                    disabled={isLoading || !promptInputValue.trim()}
+                    size="icon"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      </>
+                    ) : (
+                      <ArrowUp />
+                    )}
+                  </Button>
+                </form>
 
-            {/* Disclaimer notices */}
-            <div className="px-2 pb-1">
-              <p className="text-xs text-muted-foreground text-center break-words">
-                This is a research preview. Your chat data is public and AI can make mistakes.
-              </p>
-            </div>
-
+                {/* Disclaimer notices */}
+                <div className="px-2 pb-1">
+                  <p className="text-xs text-muted-foreground text-center break-words">
+                    This is a research preview. Your chat data is public and AI can make mistakes.
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

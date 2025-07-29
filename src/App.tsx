@@ -7,6 +7,9 @@ import type { UIMessage } from "ai";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { cn } from "./lib/utils";
 
+// Define read-only example chat IDs (same as in Chat component)
+const READ_ONLY_EXAMPLE_CHAT_IDS = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
+
 export function App() {
   const [chatId, setChatId] = useQueryState('chatId', { 
     defaultValue: '',
@@ -14,6 +17,9 @@ export function App() {
   });
   const [hasMessages, setHasMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Check if current chat is read-only (example chat)
+  const isReadOnlyChat = READ_ONLY_EXAMPLE_CHAT_IDS.includes(chatId);
 
   const { data: messages, isLoading: isLoadingMessages, isEnabled } = useQuery({
     queryKey: ['chat', chatId],
@@ -67,7 +73,7 @@ export function App() {
           ? 'translate-y-0 opacity-100'
           : '-translate-y-full opacity-0 pointer-events-none'
         }`}>
-        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} />
+        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnlyChat} />
       </div>
 
       <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'
