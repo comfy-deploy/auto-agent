@@ -1,14 +1,15 @@
-import React, { useRef, useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { useRef, useState, useEffect, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
+import ReactMarkdown from "react-markdown";
 
 // Define read-only example chat IDs
 const READ_ONLY_EXAMPLE_CHAT_IDS = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
@@ -658,18 +659,23 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <div className="whitespace-pre-wrap text-start break-words">
+                            <ReactMarkdown 
+                              components={{
+                                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+                                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+                                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+                                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+                                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+                                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+                                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+                                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                                em: ({ children }) => <em className="italic">{children}</em>,
+                              }}
+                            >
                               {part.text}
-                            </div>
+                            </ReactMarkdown>
                           </div>
 
-                          {/* {message.role === "user" && (
-                            <div className="flex-shrink-0 w-6 h-6 bg-muted rounded-full flex items-center justify-center">
-                              <svg className="w-3 h-3 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                              </svg>
-                            </div>
-                          )} */}
                         </div>
                       );
                     }
