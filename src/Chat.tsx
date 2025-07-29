@@ -10,9 +10,7 @@ import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
-
-// Define read-only example chat IDs
-const READ_ONLY_EXAMPLE_CHAT_IDS = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
+import { isReadOnlyChat } from "@/lib/constants";
 
 export function Chat(props: {
   initialMessages: UIMessage[];
@@ -32,7 +30,7 @@ export function Chat(props: {
   console.log("props.chatId", props.chatId);
 
   // Check if current chat is read-only (example chat)
-  const isReadOnlyChat = READ_ONLY_EXAMPLE_CHAT_IDS.includes(props.chatId);
+  const isReadOnly = isReadOnlyChat(props.chatId);
 
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
@@ -47,7 +45,7 @@ export function Chat(props: {
   }, [messages.length, props.onMessagesChange]);
 
   useEffect(() => {
-    if (prompt && props.chatId && lastSentPrompt.current !== prompt && !isReadOnlyChat) {
+    if (prompt && props.chatId && lastSentPrompt.current !== prompt && !isReadOnly) {
       lastSentPrompt.current = prompt;
       sendMessage({
         role: "user",
@@ -55,7 +53,7 @@ export function Chat(props: {
       });
       setPrompt(null);
     }
-  }, [prompt, props.chatId, isReadOnlyChat]);
+  }, [prompt, props.chatId, isReadOnly]);
 
   const { mutateAsync: createChat, isPending: isCreatingChat } = useMutation<{ chatId: string }>({
     mutationFn: async () => {
@@ -90,7 +88,7 @@ export function Chat(props: {
 
   useEffect(() => {
     if (!props.chatId) return;
-    if (isReadOnlyChat) return; // Don't resume for read-only chats
+    if (isReadOnly) return; // Don't resume for read-only chats
 
     if (!isLastMessageFromUser) {
       return;
@@ -102,7 +100,7 @@ export function Chat(props: {
     }
     // We want to disable the exhaustive deps rule here because we only want to run this effect once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLastMessageFromUser, isReadOnlyChat]);
+  }, [isLastMessageFromUser, isReadOnly]);
 
   const [collapsedTools, setCollapsedTools] = useState<Set<string>>(new Set());
   const [autoCollapsedTools, setAutoCollapsedTools] = useState<Set<string>>(new Set());
@@ -242,7 +240,7 @@ export function Chat(props: {
 
   const handleSubmit = () => {
     // Prevent submission for read-only chats
-    if (isReadOnlyChat) return;
+    if (isReadOnly) return;
 
     if (!props.chatId) {
       createChat().then(({ chatId }) => {
@@ -269,8 +267,8 @@ export function Chat(props: {
       // Extract text from parts array
       let initialPrompt = '';
       if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
-        const textPart = firstUserMessage.parts.find((part: any) => part.type === 'text');
-        if (textPart && textPart.text) {
+        const textPart = firstUserMessage.parts.find(part => part.type === 'text');
+        if (textPart && 'text' in textPart) {
           initialPrompt = textPart.text;
         }
       }
@@ -726,7 +724,7 @@ export function Chat(props: {
               mediaItems.length == 0 ? "pt-2" : "pb-0",
             )
           }>
-            {isReadOnlyChat ? (
+            {isReadOnly ? (
               // Read-only mode: Show "Try now" button
               <div className="px-2">
                 <div className="flex items-center justify-between gap-4 py-3">

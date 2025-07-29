@@ -5,6 +5,7 @@ import { z } from "zod";
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
+import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 
 // Initialize Redis asynchronously
 
@@ -1033,8 +1034,7 @@ async function startServer() {
           const chatId = generateId(); // generate a unique chat ID
 
           // Prevent creating new chats with example IDs
-          const exampleChatIds = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
-          if (exampleChatIds.includes(chatId)) {
+          if (READ_ONLY_EXAMPLE_CHAT_IDS.includes(chatId as any)) {
             // If by some coincidence we generate an example ID, generate a new one
             return this.POST(req);
           }
@@ -1051,11 +1051,9 @@ async function startServer() {
 
       "/api/chat/examples": {
         async GET() {
-          const exampleChatIds = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
-          
           try {
             const examples = await Promise.all(
-              exampleChatIds.map(async (chatId) => {
+              READ_ONLY_EXAMPLE_CHAT_IDS.map(async (chatId) => {
                 const messages = await loadChat(chatId);
                 if (messages.length === 0) {
                   return null;
