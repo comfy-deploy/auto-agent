@@ -1,6 +1,6 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream, tool } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
@@ -1039,6 +1039,106 @@ async function startServer() {
           await redis.set(`chat:${chatId}:meta`, JSON.stringify({ created: new Date().toISOString() }));
           // await appendMessagesToChat(chatId, messages);
           return Response.json({ chatId });
+        }
+      },
+
+      "/api/chat/examples": {
+        async GET() {
+          const exampleChatIds = ['xtxBPAEijQ7WV4YC', '3Yp6RLKO0WzPftrf'];
+          
+          try {
+            const examples = await Promise.all(
+              exampleChatIds.map(async (chatId) => {
+                const messages = await loadChat(chatId);
+                if (messages.length === 0) {
+                  return null;
+                }
+                
+                const parsedMessages = messages.map(msg => {
+                  try {
+                    return typeof msg === 'string' ? JSON.parse(msg) : msg;
+                  } catch {
+                    return msg;
+                  }
+                });
+                
+                // Get the first user message as the title
+                const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
+                let title = 'Example Chat';
+                
+                if (firstUserMessage) {
+                  // Extract text from parts array if it exists
+                  if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+                    const textPart = firstUserMessage.parts.find(part => part.type === 'text');
+                    if (textPart && textPart.text) {
+                      title = textPart.text;
+                    }
+                  } else if (firstUserMessage.text) {
+                    // Fallback to direct text property
+                    title = firstUserMessage.text;
+                  } else if (firstUserMessage.content) {
+                    // Fallback to content property
+                    title = firstUserMessage.content;
+                  }
+                }
+                
+                // Extract images from assistant messages
+                const images: string[] = [];
+                parsedMessages.forEach(msg => {
+                  if (msg.role === 'assistant' && msg.parts) {
+                    msg.parts.forEach((part: any) => {
+                      if (part.type?.startsWith("tool-") && part.output && Array.isArray(part.output)) {
+                        part.output.forEach((item: any) => {
+                          if (item.type === "image" && item.url) {
+                            const extractedUrl = typeof item.url === 'object' && item.url?.url ? item.url.url : item.url;
+                            if (extractedUrl && images.length < 3) { // Limit to 3 images
+                              images.push(extractedUrl);
+                            }
+                          }
+                        });
+                      }
+                    });
+                  }
+                });
+                
+                // Get a preview of the conversation (simplified for badge display)
+                const preview = parsedMessages
+                  .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+                  .slice(0, 2) // First 2 messages for preview
+                  .map(msg => {
+                    let text = '';
+                    
+                    if (msg.parts && Array.isArray(msg.parts)) {
+                      const textPart = msg.parts.find(part => part.type === 'text');
+                      text = textPart?.text || '';
+                    } else {
+                      text = msg.text || msg.content || '';
+                    }
+                    
+                    return {
+                      role: msg.role,
+                      text: text.length > 40 ? text.substring(0, 40) + '...' : text
+                    };
+                  });
+                
+                return {
+                  id: chatId,
+                  title: title.length > 35 ? title.substring(0, 35) + '...' : title,
+                  preview,
+                  images,
+                  messageCount: parsedMessages.length
+                };
+              })
+            );
+            
+            // Filter out null results (chats that don't exist)
+            const validExamples = examples.filter(example => example !== null);
+            
+            return Response.json(validExamples);
+          } catch (error) {
+            console.error('Error fetching example chats:', error);
+            return Response.json([]);
+          }
         }
       },
 

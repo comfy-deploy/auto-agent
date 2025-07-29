@@ -8,7 +8,10 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { cn } from "./lib/utils";
 
 export function App() {
-  const [chatId, setChatId] = useQueryState('chatId', { defaultValue: '' });
+  const [chatId, setChatId] = useQueryState('chatId', { 
+    defaultValue: '',
+    history: 'push' // Use pushState instead of replaceState for proper browser history
+  });
   const [hasMessages, setHasMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 

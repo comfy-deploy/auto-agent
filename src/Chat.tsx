@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, Wrench, ChevronDown, ChevronRight, X, Download, MessageSquare } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
@@ -16,8 +16,12 @@ export function Chat(props: {
   onMessagesChange?: (hasMessages: boolean) => void;
   onLoadingChange?: (isLoading: boolean) => void;
 }) {
-  const [_, setChatId] = useQueryState('chatId')
-  const [prompt, setPrompt] = useQueryState("prompt");
+  const [_, setChatId] = useQueryState('chatId', { 
+    history: 'push' // Use pushState for proper browser history
+  })
+  const [prompt, setPrompt] = useQueryState("prompt", {
+    history: 'push' // Use pushState for proper browser history
+  });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
 
@@ -56,6 +60,16 @@ export function Chat(props: {
     onSuccess: (data) => {
       setChatId(data.chatId);
     }
+  });
+
+  // Fetch example chats for the welcome screen
+  const { data: exampleChats = [], isLoading: isLoadingExamples } = useQuery({
+    queryKey: ['exampleChats'],
+    queryFn: async () => {
+      const response = await fetch('/api/chat/examples');
+      return response.json();
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   const resumed = useRef(false);
@@ -302,21 +316,10 @@ export function Chat(props: {
           {/* Logo */}
           <div className="flex items-center gap-3 justify-start">
             <Logo size={50}/>
-            {/* <div className="flex mt-1 items-center justify-center gap-2">
-              <h1 className="text-3xl font-semibold text-foreground ">Auto</h1>
-            </div> */}
           </div>
 
-
-          {/* Welcome Message */}
-          {/* <div className="mb-8 text-center transition-all duration-500 ease-out delay-100">
-            <p className="text-muted-foreground">
-              Time to create something
-            </p>
-          </div> */}
-
           {/* Centered Input */}
-          <div className="mt-4 w-full transition-all duration-500 ease-out delay-200">
+          <div className="mt-8 w-full transition-all duration-500 ease-out delay-200">
             <div className="bg-background shadow-lg border border-gray-200 rounded-2xl p-4">
               <form onSubmit={(e) => {
                 e.preventDefault();
@@ -366,6 +369,66 @@ export function Chat(props: {
               </form>
             </div>
           </div>
+
+          {/* Example Chats */}
+          {exampleChats.length > 0 && (
+            <div className="mt-6 w-full max-w-2xl transition-all duration-500 ease-out delay-300">
+              <p className="text-sm text-muted-foreground mb-3 text-center">
+                Try these examples
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {exampleChats.map((example: any) => (
+                  <button
+                    key={example.id}
+                    onClick={() => setChatId(example.id)}
+                    className="inline-flex items-center gap-2 p-3 bg-background border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all duration-200 group max-w-xs"
+                  >
+                    {/* Images Preview */}
+                    {example.images && example.images.length > 0 && (
+                      <div className="flex-shrink-0">
+                        {example.images.length === 1 ? (
+                          <img 
+                            src={example.images[0]} 
+                            alt="" 
+                            className="w-10 h-10 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="relative w-10 h-10">
+                            <img 
+                              src={example.images[0]} 
+                              alt="" 
+                              className="absolute inset-0 w-full h-full rounded-lg object-cover"
+                            />
+                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center font-medium">
+                              {example.images.length}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 text-left">
+                      <h3 className="font-medium text-sm text-foreground truncate">
+                        {example.title}
+                      </h3>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <MessageSquare className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs text-muted-foreground">
+                          {example.messageCount} messages
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Arrow indicator */}
+                    <div className="flex-shrink-0 text-muted-foreground group-hover:text-foreground transition-colors">
+                      <ArrowUp className="w-3 h-3 rotate-45" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
