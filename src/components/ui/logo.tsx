@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { useRive, useStateMachineInput } from '@rive-app/react-canvas';
+import { useRive, useStateMachineInput } from '@rive-app/react-canvas-lite';
 import { useEffect, useRef } from 'react';
 
 export function Logo({
