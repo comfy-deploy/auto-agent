@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play, Share2, Lock } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
@@ -30,8 +30,8 @@ export function Chat(props: {
 
   console.log("props.chatId", props.chatId);
 
-  // Check if current chat is read-only (example chat)
-  const isReadOnly = isReadOnlyChat(props.chatId);
+  // Check if current chat is read-only (example chat or published chat)
+  const isReadOnly = isReadOnlyChat(props.chatId) || publishStatus?.published;
 
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
@@ -78,6 +78,37 @@ export function Chat(props: {
       return response.json();
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Query for publish status
+  const { data: publishStatus, refetch: refetchPublishStatus } = useQuery({
+    queryKey: ['publishStatus', props.chatId],
+    queryFn: async () => {
+      if (!props.chatId || isReadOnlyChat(props.chatId)) return { published: false };
+      const response = await fetch(`/api/chat/${props.chatId}/status`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch publish status');
+      }
+      return response.json();
+    },
+    enabled: !!props.chatId && !isReadOnlyChat(props.chatId)
+  });
+
+  // Mutation for publishing/unpublishing
+  const publishMutation = useMutation({
+    mutationFn: async ({ publish }: { publish: boolean }) => {
+      const method = publish ? 'POST' : 'DELETE';
+      const response = await fetch(`/api/chat/${props.chatId}/publish`, {
+        method,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to ${publish ? 'publish' : 'unpublish'} chat`);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchPublishStatus();
+    }
   });
 
   const resumed = useRef(false);
@@ -737,10 +768,10 @@ export function Chat(props: {
                 <div className="flex items-center justify-between gap-4 py-3">
                   <div className="flex-1 text-left">
                     <p className="text-sm text-muted-foreground font-medium">
-                      This is a read-only example
+                      {publishStatus?.published ? "This is a published chat" : "This is a read-only example"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Create your own version to continue the conversation
+                      {publishStatus?.published ? "This conversation has been published and is read-only" : "Create your own version to continue the conversation"}
                     </p>
                   </div>
                   <Button
@@ -772,16 +803,44 @@ export function Chat(props: {
             ) : (
               // Regular mode: Show input form
               <>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSubmit();
-                }} className="flex items-center gap-2 px-2">
-                  {!isLoading && hasMessages && (
-                    <div className="flex-shrink-0 flex items-center justify-center">
-                      <Logo size={30} isListening={false} static={false} />
+                <div className="px-2">
+                  {/* Publish button for non-readonly chats with messages */}
+                  {!isReadOnlyChat(props.chatId) && hasMessages && (
+                    <div className="flex justify-center mb-2">
+                      <Button
+                        variant={publishStatus?.published ? "secondary" : "outline"}
+                        size="sm"
+                        onClick={() => publishMutation.mutate({ publish: !publishStatus?.published })}
+                        disabled={publishMutation.isPending}
+                        className="flex items-center gap-2"
+                      >
+                        {publishMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : publishStatus?.published ? (
+                          <>
+                            <Lock className="w-4 h-4" />
+                            <span>Published</span>
+                          </>
+                        ) : (
+                          <>
+                            <Share2 className="w-4 h-4" />
+                            <span>Publish</span>
+                          </>
+                        )}
+                      </Button>
                     </div>
                   )}
-                  <textarea
+                  
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSubmit();
+                  }} className="flex items-center gap-2">
+                    {!isLoading && hasMessages && (
+                      <div className="flex-shrink-0 flex items-center justify-center">
+                        <Logo size={30} isListening={false} static={false} />
+                      </div>
+                    )}
+                    <textarea
                     ref={promptInputRef}
                     name="prompt"
                     placeholder="What do you want to create?"
@@ -826,11 +885,12 @@ export function Chat(props: {
                   </Button>
                 </form>
 
-                {/* Disclaimer notices */}
-                <div className="px-2 pb-1">
-                  <p className="text-xs text-muted-foreground text-center break-words">
-                    This is a research preview. Your chat data is public and AI can make mistakes.
-                  </p>
+                  {/* Disclaimer notices */}
+                  <div className="pb-1">
+                    <p className="text-xs text-muted-foreground text-center break-words">
+                      This is a research preview. Your chat data is public and AI can make mistakes.
+                    </p>
+                  </div>
                 </div>
               </>
             )}

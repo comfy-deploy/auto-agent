@@ -111,6 +111,43 @@ const ratelimit = new Ratelimit({
 
 console.log(`🗄️  Redis initialized successfully`);
 
+// Helper function to get chat title from first user message
+async function getChatTitle(chatId: string): Promise<string> {
+  try {
+    const messages = await loadChat(chatId);
+    if (messages.length === 0) return 'Untitled Chat';
+
+    const parsedMessages = messages.map(msg => {
+      try {
+        return typeof msg === 'string' ? JSON.parse(msg) : msg;
+      } catch {
+        return msg;
+      }
+    });
+
+    // Get the first user message as the title
+    const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
+    if (!firstUserMessage) return 'Untitled Chat';
+
+    // Extract text from different possible structures
+    if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+      const textPart = firstUserMessage.parts.find(part => part.type === 'text');
+      if (textPart && textPart.text) {
+        return textPart.text.slice(0, 100); // Limit title length
+      }
+    } else if (firstUserMessage.text) {
+      return firstUserMessage.text.slice(0, 100);
+    } else if (firstUserMessage.content) {
+      return firstUserMessage.content.slice(0, 100);
+    }
+
+    return 'Untitled Chat';
+  } catch (error) {
+    console.error('Error getting chat title:', error);
+    return 'Untitled Chat';
+  }
+}
+
 // Helper function to extract IP address from request
 function getClientIP(req: Request): string {
   // Check various headers that might contain the real IP
@@ -1172,6 +1209,111 @@ async function startServer() {
           await redis.set(`chat:${chatId}:meta`, JSON.stringify({ created: new Date().toISOString() }));
           // await appendMessagesToChat(chatId, messages);
           return Response.json({ chatId });
+        }
+      },
+
+      "/api/chat/:chatId/publish": {
+        async POST(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3];
+
+            // Check if chat exists
+            const messages = await loadChat(chatId);
+            if (messages.length === 0) {
+              return Response.json(
+                { error: "Chat not found" },
+                { status: 404 }
+              );
+            }
+
+            // Add to published list with timestamp
+            const publishData = {
+              chatId,
+              publishedAt: new Date().toISOString(),
+              title: await getChatTitle(chatId)
+            };
+
+            await redis.hset('published_chats', chatId, JSON.stringify(publishData));
+            await redis.set(`chat:${chatId}:published`, 'true');
+
+            return Response.json({ published: true, publishedAt: publishData.publishedAt });
+          } catch (error) {
+            console.error('Error publishing chat:', error);
+            return Response.json(
+              { error: "Failed to publish chat" },
+              { status: 500 }
+            );
+          }
+        },
+
+        async DELETE(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3];
+
+            // Remove from published list
+            await redis.hdel('published_chats', chatId);
+            await redis.del(`chat:${chatId}:published`);
+
+            return Response.json({ published: false });
+          } catch (error) {
+            console.error('Error unpublishing chat:', error);
+            return Response.json(
+              { error: "Failed to unpublish chat" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/chat/:chatId/status": {
+        async GET(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3];
+
+            const published = await redis.get(`chat:${chatId}:published`);
+            const publishData = published ? await redis.hget('published_chats', chatId) : null;
+
+            return Response.json({
+              published: published === 'true',
+              publishedAt: publishData ? JSON.parse(publishData).publishedAt : null
+            });
+          } catch (error) {
+            console.error('Error getting chat status:', error);
+            return Response.json(
+              { error: "Failed to get chat status" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/sitemap": {
+        async GET() {
+          try {
+            const publishedChats = await redis.hgetall('published_chats');
+            const entries = Object.values(publishedChats).map((data: string) => {
+              const parsed = JSON.parse(data);
+              return {
+                url: `/chat/${parsed.chatId}`,
+                lastModified: parsed.publishedAt,
+                title: parsed.title
+              };
+            });
+
+            return Response.json({
+              urls: entries,
+              total: entries.length
+            });
+          } catch (error) {
+            console.error('Error generating sitemap:', error);
+            return Response.json(
+              { error: "Failed to generate sitemap" },
+              { status: 500 }
+            );
+          }
         }
       },
 
