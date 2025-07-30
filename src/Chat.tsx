@@ -810,8 +810,8 @@ export function Chat(props: {
                       <Button
                         variant={publishStatus?.published ? "secondary" : "outline"}
                         size="sm"
-                        onClick={() => publishMutation.mutate({ publish: !publishStatus?.published })}
-                        disabled={publishMutation.isPending}
+                        onClick={() => publishStatus?.published ? null : publishMutation.mutate({ publish: true })}
+                        disabled={publishMutation.isPending || publishStatus?.published}
                         className="flex items-center gap-2"
                       >
                         {publishMutation.isPending ? (
