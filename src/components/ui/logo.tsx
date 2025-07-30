@@ -66,16 +66,12 @@ export function Logo({
             const randomInterval = Math.random() * 4000 + 1000;
 
             intervalRef.current = setTimeout(() => {
-                if (!mountedRef.current) return;
+                if (!mountedRef.current || !look || !listening) return;
                 
                 // Randomly choose between look and idle state
                 const shouldLook = Math.random() > 0.5;
-                if (look) {
-                    look.value = shouldLook;
-                }
-                if (listening) {
-                    listening.value = !shouldLook;
-                }
+                look.value = shouldLook;
+                listening.value = !shouldLook;
                 
                 scheduleNextCycle();
             }, randomInterval);
@@ -83,7 +79,7 @@ export function Logo({
 
         // Start the first cycle after initial mount delay
         const initialDelay = setTimeout(() => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || !look || !listening) return;
             scheduleNextCycle();
         }, 1000); // Wait 1 second before starting random cycling
 
