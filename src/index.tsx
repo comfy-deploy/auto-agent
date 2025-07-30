@@ -195,6 +195,7 @@ const defaultModels = {
     "fal-ai/flux-kontext/dev": "State of the art image editing model, best for editing existing images, keep the prompt more descriptive on the edit, and preserve the original image",
   },
   video: {
+    "fal-ai/veo3/fast": "State of the art video generation model, best for creating videos from scratch, comes with audio",
     "fal-ai/wan/v2.2-a14b/image-to-video": "State of the art video generation model with image input",
     "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
   },
