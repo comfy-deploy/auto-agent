@@ -1,6 +1,6 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId } from 'ai';
 import { z } from "zod";
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
@@ -1037,12 +1037,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
     writer.merge(stream.toUIMessageStream());
 
-    await consumeStream({
-      stream: stream.fullStream, onError: (error) => {
-        console.error("Error consuming stream:", error);
-      }
-    })
-
+    // Stream consumption is handled by the UI components
     return "Done";
   }
 });
