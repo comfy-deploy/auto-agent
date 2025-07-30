@@ -31,7 +31,7 @@ export function Logo({
         if (isStatic) return;
         if (look && listening) {
             setTimeout(() => {
-                if (!mountedRef.current) return;
+                if (!mountedRef.current || !look || !listening) return;
                 look.value = true;
                 listening.value = false;
             }, 1000);
@@ -43,10 +43,14 @@ export function Logo({
         if (isStatic) return;
         if (listening && look) {
             if (isListening) {
-                look.value = false;
-                listening.value = true;
+                if (look && listening) {
+                    look.value = false;
+                    listening.value = true;
+                }
             } else {
-                listening.value = false;
+                if (listening) {
+                    listening.value = false;
+                }
             }
         }
     }, [listening, look, isListening, isStatic]);
