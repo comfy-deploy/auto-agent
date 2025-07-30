@@ -117,20 +117,20 @@ function getClientIP(req: Request): string {
   const forwarded = req.headers.get('x-forwarded-for');
   const realIP = req.headers.get('x-real-ip');
   const cfConnectingIP = req.headers.get('cf-connecting-ip'); // Cloudflare
-  
+
   if (forwarded) {
     // x-forwarded-for can contain multiple IPs, take the first one
     return forwarded.split(',')[0].trim();
   }
-  
+
   if (realIP) {
     return realIP;
   }
-  
+
   if (cfConnectingIP) {
     return cfConnectingIP;
   }
-  
+
   // Fallback - this might not work in all deployment environments
   return 'unknown';
 }
@@ -192,15 +192,18 @@ const defaultModels = {
     "fal-ai/flux/schnell": "Fast image generation model",
   },
   image_editing: {
-    "fal-ai/flux-kontext": "Complex image generation model",
+    "fal-ai/flux-kontext/dev": "State of the art image editing model, best for editing existing images, keep the prompt more descriptive on the edit, and preserve the original image",
   },
   video: {
     "fal-ai/wan/v2.2-a14b/image-to-video": "State of the art video generation model with image input",
     "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
   },
-  upscaling: {
-    "fal-ai/clarity-upscaler": "High quality upscaling model",
-    "fal-ai/real-esrgan": "High quality upscaling model",
+  // upscaling: {
+  //   "fal-ai/clarity-upscaler": "High quality upscaling model",
+  //   "fal-ai/real-esrgan": "High quality upscaling model",
+  // },
+  visual_understanding: {
+    "fal-ai/moondream2/visual-query": "Query to understand images",
   },
 }
 
@@ -764,7 +767,7 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: 
             },
           });
 
-          // console.log(result);
+          console.log(result);
 
           const images = result.data?.images?.map((image: any) => ({
             type: "image",
@@ -778,10 +781,12 @@ function transformOpenAPIToVercelTool(modelInfo: any, openApiSpec: any, writer: 
             url: result.data.video,
           }] : null;
 
-          console.log("images || video", images || video);
+          const text = typeof result.data?.output === 'string' ? result.data.output : null;
 
-          // Return array of images with just width and height info
-          return images || video;
+          console.log("images || video || text", images || video || text);
+
+          // Return array of images, video, or text content
+          return images || video || (text ? [{ type: "text", content: text }] : null);
         } catch (error) {
           console.error(error);
           throw error;
@@ -1007,24 +1012,29 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   const defaultTools = await createDefaultModelTools(writer);
 
+  // 2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
+  // 3. For specialized or unusual requests, use **model_search** to find specific models
+
   return streamText({
     model: "anthropic/claude-4-sonnet",
     system: `You are a creative agent with access to multiple fal.ai model tools:
 
     1. **default_models**: Use predefined high-quality models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
-    2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
     3. **webSearch**: Search the web for up-to-date information
     4. **crawlUrl**: Extract content from specific URLs when users provide links or when you need to analyze specific pages
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
     2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
-    3. For specialized or unusual requests, use **model_search** to find specific models
-    4. If unclear about the request, use **webSearch** first
-    5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
-    6. Plan multiple steps for complex tasks and execute them systematically
-    7. Always choose the most appropriate tool for the task
-    8. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
+    3. If unclear about the request, use **webSearch** first
+    4. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
+    5. Plan multiple steps for complex tasks and execute them systematically
+    6. Always choose the most appropriate tool for the task
+    7. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
+
+    **Tools:**
+    flux kontext is best for using existing images to create new images
+    flux dev is best for creating images from scratch
     `,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
@@ -1034,7 +1044,7 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
       crawlUrl,
       // default_models: defaultFalTools(writer),
       ...defaultTools,
-      model_search: falTools(writer),
+      // model_search: falTools(writer),
     },
   });
 
@@ -1288,19 +1298,19 @@ async function startServer() {
             // Rate limiting check
             const clientIP = getClientIP(req);
             console.log(`🔒 Checking rate limit for IP: ${clientIP}`);
-            
+
             const { success, limit, remaining, reset } = await ratelimit.limit(clientIP);
-            
+
             if (!success) {
               console.log(`🚫 Rate limit exceeded for IP: ${clientIP}`);
               return Response.json(
-                { 
+                {
                   error: "Daily message limit exceeded. You can send up to 10 messages per day.",
                   limit,
                   remaining,
                   resetTime: new Date(reset).toISOString()
                 },
-                { 
+                {
                   status: 429,
                   headers: {
                     'X-RateLimit-Limit': limit.toString(),
@@ -1310,7 +1320,7 @@ async function startServer() {
                 }
               );
             }
-            
+
             console.log(`✅ Rate limit check passed for IP: ${clientIP} (${remaining}/${limit} remaining)`);
 
             const body = await req.json();

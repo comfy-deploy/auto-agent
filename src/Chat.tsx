@@ -845,7 +845,7 @@ export function Chat(props: {
           onClick={() => setSelectedMediaItem(null)}
         >
           <div
-            className="relative max-w-[90vw] max-h-[90vh] rounded-lg overflow-hidden"
+            className="relative flex items-center justify-center max-w-[90vw] max-h-[90vh] rounded-lg overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Action buttons */}
@@ -893,14 +893,10 @@ export function Chat(props: {
             {/* Media content */}
             <MediaItem
               item={selectedMediaItem}
-              className="max-w-full max-h-full object-contain"
+              imageClassName="max-w-full max-h-full object-contain"
               style={{
-                maxWidth: selectedMediaItem.width ? selectedMediaItem.width : '90vw',
-                maxHeight: selectedMediaItem.height ? selectedMediaItem.height : '90vh',
-                width: '100%',
-                height: '100%',
-                // minWidth: ,
-                // minHeight: selectedMediaItem.height ? selectedMediaItem.height : '200px'
+                maxWidth: '90vw',
+                maxHeight: '90vh',
               }}
               controls={selectedMediaItem.type === 'video'}
               autoPlay={selectedMediaItem.type === 'video'}

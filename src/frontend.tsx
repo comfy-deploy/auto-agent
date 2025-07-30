@@ -15,18 +15,29 @@ import { PostHogProvider } from 'posthog-js/react'
 
 const queryClient = new QueryClient();
 
+function PostHogProviderWrapper({ children }: { children: React.ReactNode }) {
+  if (process.env.BUN_PUBLIC_POSTHOG_KEY) {
+    return (
+      <PostHogProvider apiKey={process.env.BUN_PUBLIC_POSTHOG_KEY} options={{
+        api_host: process.env.BUN_PUBLIC_POSTHOG_HOST,
+        defaults: '2025-05-24',
+      }}>
+        {children}
+      </PostHogProvider>
+    )
+  }
+  return children;
+}
+
 const elem = document.getElementById("root")!;
 const app = (
   <StrictMode>
     <NuqsAdapter>
       <QueryClientProvider client={queryClient}>
-        <PostHogProvider apiKey={process.env.BUN_PUBLIC_POSTHOG_KEY} options={{
-          api_host: process.env.BUN_PUBLIC_POSTHOG_HOST,
-          defaults: '2025-05-24',
-        }}>
+        <PostHogProviderWrapper>
           <App />
           <Toaster />
-        </PostHogProvider>
+        </PostHogProviderWrapper>
       </QueryClientProvider>
     </NuqsAdapter>
   </StrictMode>
