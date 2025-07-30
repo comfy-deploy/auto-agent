@@ -354,7 +354,7 @@ export function Chat(props: {
   if (!hasMessages) {
     return (
       <div className="h-full flex flex-col bg-background">
-        <div className="mt-20 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-4 sm:px-6 transition-all duration-700 ease-out">
+        <div className="mt-8 mx-auto w-full max-w-4xl flex-1 flex flex-col items-center justify-start px-4 sm:px-6 transition-all duration-700 ease-out">
           {/* Logo */}
           <div className="flex items-center gap-3 justify-start">
             <Logo size={50}/>

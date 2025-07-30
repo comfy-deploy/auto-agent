@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "./button";
-import { Plus, Eye } from "lucide-react";
+import { Plus, Eye, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/components/icon.svg";
 import { Logo } from "./logo";
@@ -33,16 +33,30 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
         </div>
       </div>
 
-      <Button
-        onClick={onNewChat}
-        disabled={isCreatingChat}
-        variant="outline"
-        size="sm"
-        className="gap-2"
-      >
-        <Plus className="w-4 h-4" />
-        New
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-2"
+        >
+          <a href="https://discord.gg/qwNxh7VUjS" target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="w-4 h-4" />
+            Discord
+          </a>
+        </Button>
+
+        <Button
+          onClick={onNewChat}
+          disabled={isCreatingChat}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          New
+        </Button>
+      </div>
     </header>
   );
 } 
