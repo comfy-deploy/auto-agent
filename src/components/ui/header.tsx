@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "./button";
-import { Plus, Eye, ExternalLink } from "lucide-react";
+import { Plus, Eye, ExternalLink, Github } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/components/icon.svg";
 import { Logo } from "./logo";
@@ -34,6 +34,18 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
       </div>
 
       <div className="flex items-center gap-2">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-2"
+        >
+          <a href="https://github.com/comfy-deploy/auto-agent" target="_blank" rel="noopener noreferrer">
+            <Github className="w-4 h-4" />
+            GitHub
+          </a>
+        </Button>
+
         <Button
           asChild
           variant="ghost"
