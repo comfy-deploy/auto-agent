@@ -11,6 +11,7 @@ import { App } from "./App";
 import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
+import { PostHogProvider } from 'posthog-js/react'
 
 const queryClient = new QueryClient();
 
@@ -19,8 +20,13 @@ const app = (
   <StrictMode>
     <NuqsAdapter>
       <QueryClientProvider client={queryClient}>
-        <App />
-        <Toaster />
+        <PostHogProvider apiKey={process.env.BUN_PUBLIC_POSTHOG_KEY} options={{
+          api_host: process.env.BUN_PUBLIC_POSTHOG_HOST,
+          defaults: '2025-05-24',
+        }}>
+          <App />
+          <Toaster />
+        </PostHogProvider>
       </QueryClientProvider>
     </NuqsAdapter>
   </StrictMode>
