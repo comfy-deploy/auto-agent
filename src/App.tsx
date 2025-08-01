@@ -4,27 +4,106 @@ import { Header } from "./components/ui/header";
 import { useQueryState } from 'nuqs'
 import { useEffect, useState } from "react";
 import type { UIMessage } from "ai";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, QueryClient, hydrate } from "@tanstack/react-query";
 import { cn } from "./lib/utils";
 import { isReadOnlyChat } from "./lib/constants";
 import { trackChatEvent } from "./lib/analytics";
+import { PostHogProvider } from "posthog-js/react";
+import { NuqsAdapter } from 'nuqs/adapters/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from "@/components/ui/sonner"
+import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
 
-export function App() {
-  const [chatId, setChatId] = useQueryState('chatId', { 
-    defaultValue: '',
+const queryClient = new QueryClient();
+
+function PostHogProviderWrapper({ children }: { children: React.ReactNode }) {
+  if (process.env.BUN_PUBLIC_POSTHOG_KEY) {
+    return (
+      <PostHogProvider apiKey={process.env.BUN_PUBLIC_POSTHOG_KEY} options={{
+        api_host: process.env.BUN_PUBLIC_POSTHOG_HOST,
+        defaults: '2025-05-24',
+      }}>
+        {children}
+      </PostHogProvider>
+    )
+  }
+  return children;
+}
+
+export function AppWrapper({
+  serverChatId,
+  serverMessages = [],
+  dehydratedState
+}: {
+  serverChatId?: string;
+  serverMessages?: any[];
+  dehydratedState?: any;
+} = {}) {
+  // Hydrate the query client with server state if available
+  if (dehydratedState) {
+    hydrate(queryClient, dehydratedState);
+  }
+
+  // console.log(dehydratedState);
+
+  return (
+    <NuqsAdapter>
+      <QueryClientProvider client={queryClient}>
+        <PostHogProviderWrapper>
+          <App
+            serverChatId={serverChatId}
+            serverMessages={serverMessages}
+          />
+          <Toaster />
+        </PostHogProviderWrapper>
+      </QueryClientProvider>
+    </NuqsAdapter>
+  );
+}
+
+export function App({
+  serverChatId,
+  serverMessages = [],
+  defaultChatId = ''
+}: {
+  serverChatId?: string;
+  serverMessages?: any[];
+  defaultChatId?: string;
+}) {
+  const [chatId, setChatId] = useChatIdFromPath({
+    defaultValue: serverChatId || defaultChatId,
+    serverChatId, // Pass server chat ID to the hook
     history: 'push' // Use pushState instead of replaceState for proper browser history
   });
-  const [hasMessages, setHasMessages] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+
 
   // Check if current chat is read-only (example chat)
-  const isReadOnly = isReadOnlyChat(chatId);
+  const isExampleReadOnly = isReadOnlyChat(chatId);
+
+  // Query to check if chat is published (and thus read-only)
+  const { data: publishStatus } = useQuery({
+    queryKey: ['chat-published', chatId],
+    queryFn: async () => {
+      if (!chatId || isExampleReadOnly) return { published: false };
+      const response = await fetch(`/api/chat/${chatId}/published`);
+      if (!response.ok) return { published: false };
+      return response.json();
+    },
+    enabled: !!chatId && !isExampleReadOnly,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+
+  const isReadOnly = isExampleReadOnly || (publishStatus?.published || false);
 
   const { data: messages, isLoading: isLoadingMessages, isEnabled } = useQuery({
     queryKey: ['chat', chatId],
     queryFn: () => fetch(`/api/chat?chatId=${chatId}`).then(res => res.json()),
     enabled: !!chatId,
+    initialData: serverMessages.length > 0 ? serverMessages : undefined, // Use server data as initial data
   })
+
+  const [hasMessages, setHasMessages] = useState(messages?.length > 0);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Update hasMessages when messages are loaded
   useEffect(() => {
@@ -59,6 +138,8 @@ export function App() {
   };
 
   if (isLoadingMessages && isEnabled) {
+    // console.log("isLoadingMessages", isLoadingMessages);
+    // console.log("isEnabled", isEnabled);
     return (
       <div className="w-screen h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 "></div>
@@ -66,21 +147,24 @@ export function App() {
     );
   }
 
+  console.log("hasMessages", hasMessages);
+
   return (
     <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
       {/* Always render header */}
       <div className="sticky top-0 z-20">
-        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} />
+        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
       </div>
 
-      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'
-        }`}>
+      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
         <Chat
           key={chatId}
           initialMessages={messages}
           chatId={chatId}
+          setChatId={setChatId}
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
+          isReadOnly={isReadOnly}
         />
       </div>
     </div>

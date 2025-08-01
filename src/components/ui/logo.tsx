@@ -14,7 +14,7 @@ export function Logo({
     static?: boolean;
 }) {
     const { rive, RiveComponent } = useRive({
-        src: './auto.riv',
+        src: '/auto.riv',
         stateMachines: "auto",
         autoplay: true,
         artboard: "Artboard",

@@ -16,22 +16,22 @@ import { trackChatEvent } from "@/lib/analytics";
 export function Chat(props: {
   initialMessages: UIMessage[];
   chatId: string;
+  setChatId: (chatId: string) => void;
   onMessagesChange?: (hasMessages: boolean) => void;
   onLoadingChange?: (isLoading: boolean) => void;
+  isReadOnly?: boolean;
 }) {
-  const [_, setChatId] = useQueryState('chatId', { 
-    history: 'push' // Use pushState for proper browser history
-  })
+  const { setChatId } = props;
   const [prompt, setPrompt] = useQueryState("prompt", {
     history: 'push' // Use pushState for proper browser history
   });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
 
-  console.log("props.chatId", props.chatId);
+  // console.log("props.chatId", props.chatId);
 
-  // Check if current chat is read-only (example chat)
-  const isReadOnly = isReadOnlyChat(props.chatId);
+  // Use passed isReadOnly prop, fallback to example chat check
+  const isReadOnly = props.isReadOnly ?? isReadOnlyChat(props.chatId);
 
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
@@ -86,8 +86,8 @@ export function Chat(props: {
   const lastMessage = messages[messages.length - 1];
   const isLastMessageFromUser = lastMessage?.role === "user";
 
-  console.log(messages);
-  console.log("Last message is from user:", isLastMessageFromUser);
+  // console.log(messages);
+  // console.log("Last message is from user:", isLastMessageFromUser);
 
   useEffect(() => {
     if (!props.chatId) return;

@@ -2,6 +2,7 @@ import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
+import { QueryClient, dehydrate } from '@tanstack/react-query';
 // import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
@@ -1118,6 +1119,157 @@ const arrToObj = (arr: StreamField[]) => {
   return obj
 }
 
+import { renderToReadableStream } from "react-dom/server";
+import { App, AppWrapper } from "./App";
+
+function HTMLWrapper(props: {
+  children: React.ReactNode;
+  dehydratedState?: any;
+  chatId?: string;
+}) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="icon" type="image/svg+xml" href="./components/icon.svg" />
+        <link rel="stylesheet" href="/frontend.css" />
+        <title>Auto | Creative Agent</title>
+
+        <script type="module" src="/frontend.js" defer async></script>
+
+        {/* Inject React Query dehydrated state */}
+        {props.dehydratedState && (
+          <script
+            id="__REACT_QUERY_STATE__"
+            type="application/json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify(props.dehydratedState)
+            }}
+          />
+        )}
+
+        {/* Inject chat ID */}
+        {props.chatId && (
+          <script
+            id="__CHAT_ID__"
+            type="text/plain"
+            dangerouslySetInnerHTML={{
+              __html: props.chatId
+            }}
+          />
+        )}
+
+        {/* Google tag (gtag.js) */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-JH92Y4NVZM"></script>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-JH92Y4NVZM');
+            `
+          }}
+        />
+
+        {/* <script type="module" src="./frontend.tsx" async></script> */}
+      </head>
+      <body style={{ overflow: 'unset' }}>
+        <div id="root">{props.children}</div>
+      </body>
+    </html>
+  )
+}
+
+import plugin from "bun-plugin-tailwind";
+import { build, type BuildConfig } from "bun";
+
+
+async function buildDeb() {
+  const result = await build({
+    entrypoints: ["./src/frontend.tsx"],
+    outdir: "./dist",
+    plugins: [plugin],
+    minify: true,
+    env: "inline",
+    target: "browser",
+    sourcemap: "linked",
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV || "development"),
+    },
+  });
+
+  // console.log("result", result);
+
+  // const tailwindCSS = result.outputs.find(output => output.path.endsWith("tailwind.css"));
+
+  // console.log("tailwindCSS", tailwindCSS);
+}
+
+// Simple in-memory cache for static files
+const staticFileCache = new Map<string, { content: Uint8Array, etag: string, lastModified: number }>();
+
+async function serveStaticFile(filePath: string, contentType: string): Promise<Response> {
+  const isDevelopment = process.env.NODE_ENV === "development";
+
+  try {
+    const file = Bun.file(filePath);
+    const stats = await file.stat();
+
+    if (!stats) {
+      return new Response("File not found", { status: 404 });
+    }
+
+    const lastModified = stats.mtime.getTime();
+    const etag = `"${stats.size}-${lastModified}"`;
+
+    // In development, always check file modification time
+    // In production, cache in memory for performance
+    let cachedFile = staticFileCache.get(filePath);
+
+    if (!isDevelopment && cachedFile && cachedFile.lastModified === lastModified) {
+      // Use cached version in production if file hasn't changed
+      return new Response(cachedFile.content, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=31536000, immutable", // 1 year cache
+          "ETag": cachedFile.etag,
+          "Last-Modified": stats.mtime.toUTCString(),
+        },
+      });
+    }
+
+    // Read file content
+    const content = await file.bytes();
+
+    // Cache in production only
+    if (!isDevelopment) {
+      staticFileCache.set(filePath, { content, etag, lastModified });
+    }
+
+    const headers = {
+      "Content-Type": contentType,
+      "ETag": etag,
+      "Last-Modified": stats.mtime.toUTCString(),
+    } as Record<string, string>;
+
+    // Different cache strategies for dev vs prod
+    if (isDevelopment) {
+      headers["Cache-Control"] = "no-cache"; // Always revalidate in development
+    } else {
+      headers["Cache-Control"] = "public, max-age=31536000, immutable"; // 1 year cache in production
+    }
+
+    return new Response(content, { headers });
+
+  } catch (error) {
+    console.error(`Error serving static file ${filePath}:`, error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
+}
+
+
 async function startServer() {
   // Initialize Redis first
   // await initializeRedis();
@@ -1132,11 +1284,78 @@ async function startServer() {
       // Serve index.html for all unmatched routes.
       "/*": index,
 
-      "/auto.riv": new Response(await Bun.file("./public/auto.riv").bytes(), {
-        headers: {
-          "Content-Type": "application/octet-stream",
-        },
-      }),
+      "/frontend.js": {
+        async GET() {
+          return serveStaticFile("./dist/frontend.js", "application/javascript");
+        }
+      },
+
+      "/frontend.css": {
+        async GET() {
+          return serveStaticFile("./dist/frontend.css", "text/css");
+        }
+      },
+
+      "/chat/:chatId": {
+        async GET(req) {
+
+          if (process.env.NODE_ENV === "development") {
+            await buildDeb();
+          }
+
+          const { chatId } = req.params;
+
+          // Create a QueryClient for server-side rendering
+          const queryClient = new QueryClient({
+            defaultOptions: {
+              queries: {
+                staleTime: 60 * 1000, // 1 minute
+                retry: false, // Disable retry on server
+              },
+            },
+          });
+
+          // Fetch initial messages for SSR
+          let initialMessages = [];
+          try {
+            initialMessages = await loadChat(chatId);
+
+            // Prefetch the chat data into the QueryClient
+            await queryClient.prefetchQuery({
+              queryKey: ['chat', chatId],
+              queryFn: () => Promise.resolve(initialMessages),
+            });
+          } catch (error) {
+            console.warn(`Failed to load chat ${chatId} for SSR:`, error);
+          }
+
+          // Dehydrate the QueryClient state
+          const dehydratedState = dehydrate(queryClient);
+
+          const stream = await renderToReadableStream(
+            <HTMLWrapper
+              dehydratedState={dehydratedState}
+              chatId={chatId}
+            >
+              <AppWrapper
+                dehydratedState={dehydratedState}
+                serverChatId={chatId}
+                serverMessages={initialMessages}
+              />
+            </HTMLWrapper>,
+          );
+
+          return new Response(stream, {
+            headers: { "Content-Type": "text/html" },
+          });
+        }
+      },
+
+      "/auto.riv": {
+        async GET() {
+          return serveStaticFile("./public/auto.riv", "application/octet-stream");
+        }
+      },
 
       // Add health check endpoint
       "/api/health": {
@@ -1609,6 +1828,205 @@ async function startServer() {
             console.error('Error in stream route:', error);
             return Response.json(
               { error: "Failed to process request" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/chat/:chatId/publish": {
+        async POST(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            if (!chatId) {
+              return Response.json(
+                { error: "Chat ID is required" },
+                { status: 400 }
+              );
+            }
+
+            // Check if chat exists
+            const chatExists = await redis.exists(`chat:${chatId}:meta`);
+            if (!chatExists) {
+              return Response.json(
+                { error: "Chat not found" },
+                { status: 404 }
+              );
+            }
+
+            // Add to published chats set
+            await redis.sadd("published_chats", chatId);
+
+            // Set publish metadata
+            await redis.set(`chat:${chatId}:published`, JSON.stringify({
+              publishedAt: new Date().toISOString(),
+              isPublished: true
+            }));
+
+            return Response.json({
+              success: true,
+              chatId,
+              published: true
+            });
+          } catch (error) {
+            console.error('Error publishing chat:', error);
+            return Response.json(
+              { error: "Failed to publish chat" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/chat/:chatId/unpublish": {
+        async POST(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            if (!chatId) {
+              return Response.json(
+                { error: "Chat ID is required" },
+                { status: 400 }
+              );
+            }
+
+            // Remove from published chats set
+            await redis.srem("published_chats", chatId);
+
+            // Remove publish metadata
+            await redis.del(`chat:${chatId}:published`);
+
+            return Response.json({
+              success: true,
+              chatId,
+              published: false
+            });
+          } catch (error) {
+            console.error('Error unpublishing chat:', error);
+            return Response.json(
+              { error: "Failed to unpublish chat" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/chat/:chatId/published": {
+        async GET(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            if (!chatId) {
+              return Response.json(
+                { error: "Chat ID is required" },
+                { status: 400 }
+              );
+            }
+
+            // Check if chat is in published set
+            const isPublished = await redis.sismember("published_chats", chatId);
+
+            let publishedAt = null;
+            if (isPublished) {
+              const publishMeta = await redis.get(`chat:${chatId}:published`);
+              if (publishMeta) {
+                try {
+                  // Handle both string and object responses from Redis
+                  const meta = typeof publishMeta === 'string' ? JSON.parse(publishMeta) : publishMeta;
+                  publishedAt = meta.publishedAt;
+                } catch (error) {
+                  console.error('Error parsing publish metadata:', error);
+                  publishedAt = new Date().toISOString(); // Fallback
+                }
+              }
+            }
+
+            return Response.json({
+              chatId,
+              published: isPublished,
+              publishedAt
+            });
+          } catch (error) {
+            console.error('Error checking publish status:', error);
+            return Response.json(
+              { error: "Failed to check publish status" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/sitemap.xml": {
+        async GET() {
+          try {
+            // Get all published chat IDs
+            const publishedChatIds = await redis.smembers("published_chats");
+
+            if (!publishedChatIds || publishedChatIds.length === 0) {
+              return new Response(
+                `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+</urlset>`,
+                {
+                  headers: {
+                    "Content-Type": "application/xml",
+                    "Cache-Control": "public, max-age=3600"
+                  }
+                }
+              );
+            }
+
+            // Get publish metadata for each chat to include lastmod
+            const chatMetadata = await Promise.all(
+              publishedChatIds.map(async (chatId) => {
+                const publishMeta = await redis.get(`chat:${chatId}:published`);
+                let publishedAt = new Date().toISOString(); // Default fallback
+
+                if (publishMeta) {
+                  try {
+                    // Handle both string and object responses from Redis
+                    const meta = typeof publishMeta === 'string' ? JSON.parse(publishMeta) : publishMeta;
+                    publishedAt = meta.publishedAt || publishedAt;
+                  } catch (error) {
+                    console.error(`Error parsing publish metadata for chat ${chatId}:`, error);
+                  }
+                }
+
+                return { chatId, publishedAt };
+              })
+            );
+
+            // Generate sitemap XML
+            const baseUrl = process.env.BASE_URL || 'https://www.autocontent.run';
+            const urlEntries = chatMetadata.map(({ chatId, publishedAt }) => {
+              const lastmod = new Date(publishedAt).toISOString().split('T')[0]; // YYYY-MM-DD format
+              return `  <url>
+    <loc>${baseUrl}/chat/${chatId}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+            }).join('\n');
+
+            const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries}
+</urlset>`;
+
+            return new Response(sitemap, {
+              headers: {
+                "Content-Type": "application/xml",
+                "Cache-Control": "public, max-age=3600"
+              }
+            });
+          } catch (error) {
+            console.error('Error generating sitemap:', error);
+            return Response.json(
+              { error: "Failed to generate sitemap" },
               { status: 500 }
             );
           }

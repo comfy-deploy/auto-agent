@@ -154,6 +154,19 @@ const result = await build({
   ...cliConfig, // Merge in any CLI-provided options
 });
 
+const ssr = await build({
+  entrypoints: ["./src/frontend.tsx"],
+  outdir: "./dist",
+  plugins: [plugin],
+  minify: true,
+  env: "inline",
+  target: "browser",
+  sourcemap: "linked",
+  define: {
+    "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV || "development"),
+  },
+});
+
 // Print the results
 const end = performance.now();
 
