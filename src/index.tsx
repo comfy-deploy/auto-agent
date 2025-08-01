@@ -1122,11 +1122,219 @@ const arrToObj = (arr: StreamField[]) => {
 import { renderToReadableStream } from "react-dom/server";
 import { App, AppWrapper } from "./App";
 
+function toTitleCase(str: string): string {
+  // Words that should stay lowercase in title case
+  const lowerCaseWords = ['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if', 'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet'];
+  
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map((word, index) => {
+      // Always capitalize the first word
+      if (index === 0) {
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      }
+      
+      // Keep lowercase words lowercase unless they're the first word
+      if (lowerCaseWords.includes(word)) {
+        return word;
+      }
+      
+      // Capitalize other words
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+}
+
+async function generateAIMetadata(messages: any[], chatId: string): Promise<{ title: string; description: string }> {
+  if (!messages || messages.length === 0) {
+    return {
+      title: "AI Chat Conversation",
+      description: "Explore this AI conversation with Auto, the creative AI agent."
+    };
+  }
+
+  // Parse messages that might be JSON strings
+  const parsedMessages = messages.map(msg => {
+    try {
+      return typeof msg === 'string' ? JSON.parse(msg) : msg;
+    } catch {
+      return msg;
+    }
+  });
+
+  // Extract conversation content for AI analysis
+  const conversationText = parsedMessages.map(msg => {
+    let text = '';
+    const role = msg.role === 'user' ? 'User' : 'Assistant';
+    
+    if (msg.parts && Array.isArray(msg.parts)) {
+      const textPart = msg.parts.find(part => part.type === 'text');
+      text = textPart?.text || '';
+    } else {
+      text = msg.text || msg.content || '';
+    }
+    
+    return `${role}: ${text}`;
+  }).slice(0, 10).join('\n\n'); // Limit to first 10 messages to avoid token limits
+
+  try {
+    const metadataSchema = z.object({
+      title: z.string().describe("An engaging, SEO-optimized title (45-60 characters) that captures the main topic/question. Should be in title case and end with ' | Auto AI'"),
+      description: z.string().describe("A compelling meta description (140-160 characters) that starts with the main topic/question, mentions it's an AI conversation, includes relevant keywords naturally, appeals to the target audience, and ends with a benefit or call-to-action")
+    });
+
+    const result = await generateObject({
+      model: "xai/grok-4",
+      schema: metadataSchema,
+      prompt: `Analyze this AI conversation and generate SEO-optimized metadata:
+
+CONVERSATION:
+${conversationText}
+
+Generate metadata that:
+1. Title should be engaging and capture the main topic (45-60 characters), end with " | Auto AI"
+2. Description should be compelling (140-160 characters), mention it's an AI conversation, include relevant keywords, and appeal to developers/designers/writers
+
+Make it appealing for Google search results and social media sharing.`,
+      temperature: 0.7,
+      maxOutputTokens: 300,
+    });
+
+    // Validate and sanitize the response
+    let title = result.object.title || "AI Conversation | Auto AI";
+    let description = result.object.description || "Explore this AI conversation with Auto, the creative AI agent.";
+    
+    // Ensure title ends with " | Auto AI" if not already
+    if (!title.includes('| Auto')) {
+      title = title.replace(/\s*\|\s*.*$/, '') + ' | Auto AI';
+    }
+    
+    // Truncate if too long
+    if (title.length > 70) {
+      title = title.substring(0, 67) + '...';
+    }
+    if (description.length > 160) {
+      description = description.substring(0, 157) + '...';
+    }
+
+    return { title, description };
+    
+  } catch (error) {
+    console.error('Error generating AI metadata:', error);
+    
+    // Fallback to basic metadata if AI generation fails
+    const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
+    let fallbackTitle = "AI Conversation | Auto AI";
+    
+    if (firstUserMessage) {
+      let text = '';
+      if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+        const textPart = firstUserMessage.parts.find(part => part.type === 'text');
+        text = textPart?.text || '';
+      } else {
+        text = firstUserMessage.text || firstUserMessage.content || '';
+      }
+      
+      if (text) {
+        const cleanText = text.substring(0, 45).replace(/\s+/g, ' ').trim();
+        fallbackTitle = toTitleCase(cleanText) + ' | Auto AI';
+      }
+    }
+    
+    return {
+      title: fallbackTitle,
+      description: "Explore this AI conversation with Auto, the creative AI agent that helps with coding, design, content creation, and problem-solving."
+    };
+  }
+}
+
+
+
+function generateChatMetadata(messages: any[]): { title: string; description: string } {
+  if (!messages || messages.length === 0) {
+    return {
+      title: "Chat",
+      description: "A conversation with Auto, your creative AI agent."
+    };
+  }
+
+  // Parse messages that might be JSON strings
+  const parsedMessages = messages.map(msg => {
+    try {
+      return typeof msg === 'string' ? JSON.parse(msg) : msg;
+    } catch {
+      return msg;
+    }
+  });
+
+  // Get the first user message for the title
+  const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
+  let title = 'Chat';
+  let firstUserText = '';
+
+  if (firstUserMessage) {
+    // Extract text from parts array if it exists
+    if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
+      const textPart = firstUserMessage.parts.find(part => part.type === 'text');
+      if (textPart && textPart.text) {
+        firstUserText = textPart.text;
+      }
+    } else if (firstUserMessage.text) {
+      // Fallback to direct text property
+      firstUserText = firstUserMessage.text;
+    } else if (firstUserMessage.content) {
+      // Fallback to content property
+      firstUserText = firstUserMessage.content;
+    }
+
+    if (firstUserText) {
+      // Create a clean title from the first user message
+      let cleanTitle = firstUserText.length > 60 ? firstUserText.substring(0, 60) + '...' : firstUserText;
+      // Remove line breaks and excessive whitespace for title
+      cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
+      // Apply title case formatting
+      title = toTitleCase(cleanTitle);
+    }
+  }
+
+  // Generate description based on conversation flow
+  const userMessages = parsedMessages.filter(msg => msg.role === 'user');
+  const assistantMessages = parsedMessages.filter(msg => msg.role === 'assistant');
+  
+  let description = '';
+  if (firstUserText) {
+    const preview = firstUserText.length > 120 ? firstUserText.substring(0, 120) + '...' : firstUserText;
+    // Ensure description starts with proper capitalization
+    const capitalizedPreview = preview.charAt(0).toUpperCase() + preview.slice(1);
+    description = `${capitalizedPreview} Conversation with Auto creative AI agent`;
+    
+    // Add context about the conversation
+    if (userMessages.length > 1) {
+      description += ` featuring ${userMessages.length} questions`;
+    }
+    if (assistantMessages.length > 0) {
+      description += ` and detailed AI responses`;
+    }
+    description += '.';
+  } else {
+    description = `A conversation with Auto, your creative AI agent. ${parsedMessages.length} messages exchanged.`;
+  }
+
+  return { title, description };
+}
+
 function HTMLWrapper(props: {
   children: React.ReactNode;
   dehydratedState?: any;
   chatId?: string;
+  title?: string;
+  description?: string;
 }) {
+  const pageTitle = props.title ? `${props.title} | Auto` : "Auto | Creative Agent";
+  const baseUrl = process.env.BASE_URL || 'https://www.autocontent.run';
+  const currentUrl = props.chatId ? `${baseUrl}/chat/${props.chatId}` : baseUrl;
+  
   return (
     <html lang="en">
       <head>
@@ -1134,7 +1342,35 @@ function HTMLWrapper(props: {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" type="image/svg+xml" href="./components/icon.svg" />
         <link rel="stylesheet" href="/frontend.css" />
-        <title>Auto | Creative Agent</title>
+        <title>{pageTitle}</title>
+        
+        {/* SEO Meta Tags */}
+        {props.description && (
+          <meta name="description" content={props.description} />
+        )}
+        
+        {/* Open Graph Meta Tags */}
+        <meta property="og:title" content={pageTitle} />
+        {props.description && (
+          <meta property="og:description" content={props.description} />
+        )}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={currentUrl} />
+        <meta property="og:site_name" content="Auto | Creative AI Agent" />
+        <meta property="og:image" content={`${baseUrl}/auto-og-image.png`} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        
+        {/* Twitter Card Meta Tags */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={pageTitle} />
+        {props.description && (
+          <meta name="twitter:description" content={props.description} />
+        )}
+        <meta name="twitter:image" content={`${baseUrl}/auto-og-image.png`} />
+        
+        {/* Canonical URL */}
+        <link rel="canonical" href={currentUrl} />
 
         <script type="module" src="/frontend.js" defer async></script>
 
@@ -1332,10 +1568,34 @@ async function startServer() {
           // Dehydrate the QueryClient state
           const dehydratedState = dehydrate(queryClient);
 
+          // Check for cached AI-generated metadata first
+          let title, description;
+          try {
+            const cachedMetadata = await redis.get(`chat:${chatId}:metadata`);
+            if (cachedMetadata) {
+              const metadata = cachedMetadata as { title: string, description: string };
+              title = metadata.title;
+              description = metadata.description;
+            } else {
+              // Fallback to regular metadata generation
+              const generatedMetadata = generateChatMetadata(initialMessages);
+              title = generatedMetadata.title;
+              description = generatedMetadata.description;
+            }
+          } catch (error) {
+            console.warn(`Failed to load cached metadata for chat ${chatId}:`, error);
+            // Fallback to regular metadata generation
+            const generatedMetadata = generateChatMetadata(initialMessages);
+            title = generatedMetadata.title;
+            description = generatedMetadata.description;
+          }
+
           const stream = await renderToReadableStream(
             <HTMLWrapper
               dehydratedState={dehydratedState}
               chatId={chatId}
+              title={title}
+              description={description}
             >
               <AppWrapper
                 dehydratedState={dehydratedState}
@@ -1856,6 +2116,27 @@ async function startServer() {
               );
             }
 
+            // Load chat messages for AI metadata generation
+            const messages = await loadChat(chatId);
+            
+            // Generate AI-optimized metadata using Vercel AI SDK
+            let aiGeneratedMetadata;
+            try {
+              aiGeneratedMetadata = await generateAIMetadata(messages, chatId);
+            } catch (error) {
+              console.warn('Failed to generate AI metadata, using fallback:', error);
+              // Fallback to regular metadata if AI generation fails
+              aiGeneratedMetadata = generateChatMetadata(messages);
+            }
+
+            // Cache the AI-generated metadata
+            await redis.set(`chat:${chatId}:metadata`, JSON.stringify({
+              title: aiGeneratedMetadata.title,
+              description: aiGeneratedMetadata.description,
+              generatedAt: new Date().toISOString(),
+              model: 'ai-generated'
+            }));
+
             // Add to published chats set
             await redis.sadd("published_chats", chatId);
 
@@ -1868,7 +2149,8 @@ async function startServer() {
             return Response.json({
               success: true,
               chatId,
-              published: true
+              published: true,
+              metadata: aiGeneratedMetadata
             });
           } catch (error) {
             console.error('Error publishing chat:', error);
@@ -1899,6 +2181,9 @@ async function startServer() {
             // Remove publish metadata
             await redis.del(`chat:${chatId}:published`);
 
+            // Remove cached AI-generated metadata
+            await redis.del(`chat:${chatId}:metadata`);
+
             return Response.json({
               success: true,
               chatId,
@@ -1908,6 +2193,74 @@ async function startServer() {
             console.error('Error unpublishing chat:', error);
             return Response.json(
               { error: "Failed to unpublish chat" },
+              { status: 500 }
+            );
+          }
+        }
+      },
+
+      "/api/chat/:chatId/regenerate-metadata": {
+        async POST(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            if (!chatId) {
+              return Response.json(
+                { error: "Chat ID is required" },
+                { status: 400 }
+              );
+            }
+
+            // Check if chat exists and is published
+            const chatExists = await redis.exists(`chat:${chatId}:meta`);
+            const isPublished = await redis.sismember("published_chats", chatId);
+            
+            if (!chatExists) {
+              return Response.json(
+                { error: "Chat not found" },
+                { status: 404 }
+              );
+            }
+
+            if (!isPublished) {
+              return Response.json(
+                { error: "Chat is not published" },
+                { status: 400 }
+              );
+            }
+
+            // Load chat messages
+            const messages = await loadChat(chatId);
+            
+            // Generate new AI-optimized metadata
+            let aiGeneratedMetadata;
+            try {
+              aiGeneratedMetadata = await generateAIMetadata(messages, chatId);
+            } catch (error) {
+              console.warn('Failed to generate AI metadata, using fallback:', error);
+              aiGeneratedMetadata = generateChatMetadata(messages);
+            }
+
+            // Update cached metadata
+            await redis.set(`chat:${chatId}:metadata`, JSON.stringify({
+              title: aiGeneratedMetadata.title,
+              description: aiGeneratedMetadata.description,
+              generatedAt: new Date().toISOString(),
+              model: 'ai-generated',
+              regenerated: true
+            }));
+
+            return Response.json({
+              success: true,
+              chatId,
+              metadata: aiGeneratedMetadata,
+              regenerated: true
+            });
+          } catch (error) {
+            console.error('Error regenerating metadata:', error);
+            return Response.json(
+              { error: "Failed to regenerate metadata" },
               { status: 500 }
             );
           }
@@ -1967,17 +2320,23 @@ async function startServer() {
             const publishedChatIds = await redis.smembers("published_chats");
 
             if (!publishedChatIds || publishedChatIds.length === 0) {
-              return new Response(
-                `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-</urlset>`,
-                {
-                  headers: {
-                    "Content-Type": "application/xml",
-                    "Cache-Control": "public, max-age=3600"
-                  }
+              // Create empty sitemap using the sitemap library
+              const { SitemapStream, streamToPromise } = await import('sitemap');
+              const { Readable } = await import('stream');
+              
+              const smStream = new SitemapStream({ 
+                hostname: process.env.BASE_URL || 'https://www.autocontent.run'
+              });
+              
+              const emptyStream = Readable.from([]);
+              const sitemap = await streamToPromise(emptyStream.pipe(smStream));
+              
+              return new Response(sitemap.toString(), {
+                headers: {
+                  "Content-Type": "application/xml",
+                  "Cache-Control": "public, max-age=3600"
                 }
-              );
+              });
             }
 
             // Get publish metadata for each chat to include lastmod
@@ -2000,24 +2359,27 @@ async function startServer() {
               })
             );
 
-            // Generate sitemap XML
+            // Generate sitemap using the sitemap library
+            const { SitemapStream, streamToPromise } = await import('sitemap');
+            const { Readable } = await import('stream');
+            
             const baseUrl = process.env.BASE_URL || 'https://www.autocontent.run';
-            const urlEntries = chatMetadata.map(({ chatId, publishedAt }) => {
-              const lastmod = new Date(publishedAt).toISOString().split('T')[0]; // YYYY-MM-DD format
-              return `  <url>
-    <loc>${baseUrl}/chat/${chatId}</loc>
-    <lastmod>${lastmod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>`;
-            }).join('\n');
+            
+            // Create sitemap entries
+            const links = chatMetadata.map(({ chatId, publishedAt }) => ({
+              url: `/chat/${chatId}`,
+              lastmod: new Date(publishedAt).toISOString().split('T')[0], // YYYY-MM-DD format
+              changefreq: 'weekly' as const,
+              priority: 0.8
+            }));
 
-            const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urlEntries}
-</urlset>`;
+            // Create sitemap stream
+            const smStream = new SitemapStream({ hostname: baseUrl });
+            
+            // Generate sitemap
+            const sitemap = await streamToPromise(Readable.from(links).pipe(smStream));
 
-            return new Response(sitemap, {
+            return new Response(sitemap.toString(), {
               headers: {
                 "Content-Type": "application/xml",
                 "Cache-Control": "public, max-age=3600"
