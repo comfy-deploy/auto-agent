@@ -1125,7 +1125,7 @@ import { App, AppWrapper } from "./App";
 function toTitleCase(str: string): string {
   // Words that should stay lowercase in title case
   const lowerCaseWords = ['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if', 'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet'];
-  
+
   return str
     .toLowerCase()
     .split(' ')
@@ -1134,12 +1134,12 @@ function toTitleCase(str: string): string {
       if (index === 0) {
         return word.charAt(0).toUpperCase() + word.slice(1);
       }
-      
+
       // Keep lowercase words lowercase unless they're the first word
       if (lowerCaseWords.includes(word)) {
         return word;
       }
-      
+
       // Capitalize other words
       return word.charAt(0).toUpperCase() + word.slice(1);
     })
@@ -1167,14 +1167,14 @@ async function generateAIMetadata(messages: any[], chatId: string): Promise<{ ti
   const conversationText = parsedMessages.map(msg => {
     let text = '';
     const role = msg.role === 'user' ? 'User' : 'Assistant';
-    
+
     if (msg.parts && Array.isArray(msg.parts)) {
       const textPart = msg.parts.find(part => part.type === 'text');
       text = textPart?.text || '';
     } else {
       text = msg.text || msg.content || '';
     }
-    
+
     return `${role}: ${text}`;
   }).slice(0, 10).join('\n\n'); // Limit to first 10 messages to avoid token limits
 
@@ -1205,12 +1205,12 @@ Make it appealing for Google search results and social media sharing.`,
     // Validate and sanitize the response
     let title = result.object.title || "AI Conversation | Auto AI";
     let description = result.object.description || "Explore this AI conversation with Auto, the creative AI agent.";
-    
+
     // Ensure title ends with " | Auto AI" if not already
     if (!title.includes('| Auto')) {
       title = title.replace(/\s*\|\s*.*$/, '') + ' | Auto AI';
     }
-    
+
     // Truncate if too long
     if (title.length > 70) {
       title = title.substring(0, 67) + '...';
@@ -1220,14 +1220,14 @@ Make it appealing for Google search results and social media sharing.`,
     }
 
     return { title, description };
-    
+
   } catch (error) {
     console.error('Error generating AI metadata:', error);
-    
+
     // Fallback to basic metadata if AI generation fails
     const firstUserMessage = parsedMessages.find(msg => msg.role === 'user');
     let fallbackTitle = "AI Conversation | Auto AI";
-    
+
     if (firstUserMessage) {
       let text = '';
       if (firstUserMessage.parts && Array.isArray(firstUserMessage.parts)) {
@@ -1236,13 +1236,13 @@ Make it appealing for Google search results and social media sharing.`,
       } else {
         text = firstUserMessage.text || firstUserMessage.content || '';
       }
-      
+
       if (text) {
         const cleanText = text.substring(0, 45).replace(/\s+/g, ' ').trim();
         fallbackTitle = toTitleCase(cleanText) + ' | Auto AI';
       }
     }
-    
+
     return {
       title: fallbackTitle,
       description: "Explore this AI conversation with Auto, the creative AI agent that helps with coding, design, content creation, and problem-solving."
@@ -1302,14 +1302,14 @@ function generateChatMetadata(messages: any[]): { title: string; description: st
   // Generate description based on conversation flow
   const userMessages = parsedMessages.filter(msg => msg.role === 'user');
   const assistantMessages = parsedMessages.filter(msg => msg.role === 'assistant');
-  
+
   let description = '';
   if (firstUserText) {
     const preview = firstUserText.length > 120 ? firstUserText.substring(0, 120) + '...' : firstUserText;
     // Ensure description starts with proper capitalization
     const capitalizedPreview = preview.charAt(0).toUpperCase() + preview.slice(1);
     description = `${capitalizedPreview} Conversation with Auto creative AI agent`;
-    
+
     // Add context about the conversation
     if (userMessages.length > 1) {
       description += ` featuring ${userMessages.length} questions`;
@@ -1335,7 +1335,7 @@ function HTMLWrapper(props: {
   const pageTitle = props.title ? `${props.title} | Auto` : "Auto | Creative Agent";
   const baseUrl = process.env.BASE_URL || 'https://www.autocontent.run';
   const currentUrl = props.chatId ? `${baseUrl}/chat/${props.chatId}` : baseUrl;
-  
+
   return (
     <html lang="en">
       <head>
@@ -1344,12 +1344,12 @@ function HTMLWrapper(props: {
         <link rel="icon" type="image/svg+xml" href="./components/icon.svg" />
         <link rel="stylesheet" href="/frontend.css" />
         <title>{pageTitle}</title>
-        
+
         {/* SEO Meta Tags */}
         {props.description && (
           <meta name="description" content={props.description} />
         )}
-        
+
         {/* Open Graph Meta Tags */}
         <meta property="og:title" content={pageTitle} />
         {props.description && (
@@ -1361,7 +1361,7 @@ function HTMLWrapper(props: {
         <meta property="og:image" content={`${baseUrl}/auto-og-image.png`} />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        
+
         {/* Twitter Card Meta Tags */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={pageTitle} />
@@ -1369,7 +1369,7 @@ function HTMLWrapper(props: {
           <meta name="twitter:description" content={props.description} />
         )}
         <meta name="twitter:image" content={`${baseUrl}/auto-og-image.png`} />
-        
+
         {/* Canonical URL */}
         <link rel="canonical" href={currentUrl} />
 
@@ -1518,8 +1518,7 @@ async function startServer() {
   server = serve({
     idleTimeout: 200,
     routes: {
-      // Serve index.html for all unmatched routes.
-      "/*": index,
+
 
       "/frontend.js": {
         async GET() {
@@ -2119,7 +2118,7 @@ async function startServer() {
 
             // Load chat messages for AI metadata generation
             const messages = await loadChat(chatId);
-            
+
             // Generate AI-optimized metadata using Vercel AI SDK
             let aiGeneratedMetadata;
             try {
@@ -2216,7 +2215,7 @@ async function startServer() {
             // Check if chat exists and is published
             const chatExists = await redis.exists(`chat:${chatId}:meta`);
             const isPublished = await redis.sismember("published_chats", chatId);
-            
+
             if (!chatExists) {
               return Response.json(
                 { error: "Chat not found" },
@@ -2233,7 +2232,7 @@ async function startServer() {
 
             // Load chat messages
             const messages = await loadChat(chatId);
-            
+
             // Generate new AI-optimized metadata
             let aiGeneratedMetadata;
             try {
@@ -2324,14 +2323,14 @@ async function startServer() {
               // Create empty sitemap using the sitemap library
               const { SitemapStream, streamToPromise } = await import('sitemap');
               const { Readable } = await import('stream');
-              
-              const smStream = new SitemapStream({ 
+
+              const smStream = new SitemapStream({
                 hostname: process.env.BASE_URL || 'https://www.autocontent.run'
               });
-              
+
               const emptyStream = Readable.from([]);
               const sitemap = await streamToPromise(emptyStream.pipe(smStream));
-              
+
               return new Response(sitemap.toString(), {
                 headers: {
                   "Content-Type": "application/xml",
@@ -2363,9 +2362,9 @@ async function startServer() {
             // Generate sitemap using the sitemap library
             const { SitemapStream, streamToPromise } = await import('sitemap');
             const { Readable } = await import('stream');
-            
+
             const baseUrl = process.env.BASE_URL || 'https://www.autocontent.run';
-            
+
             // Create sitemap entries
             const links = chatMetadata.map(({ chatId, publishedAt }) => ({
               url: `/chat/${chatId}`,
@@ -2376,7 +2375,7 @@ async function startServer() {
 
             // Create sitemap stream
             const smStream = new SitemapStream({ hostname: baseUrl });
-            
+
             // Generate sitemap
             const sitemap = await streamToPromise(Readable.from(links).pipe(smStream));
 
@@ -2395,6 +2394,9 @@ async function startServer() {
           }
         }
       },
+
+      // Serve index.html for all unmatched routes.
+      "/*": index,
     },
 
     development: process.env.NODE_ENV !== "production",
