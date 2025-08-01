@@ -28,7 +28,7 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
       if (!response.ok) throw new Error('Failed to check publish status');
       return response.json();
     },
-    enabled: !!chatId && !isExampleChat, // Don't check for example chats
+    enabled: !!chatId, // Don't check for example chats
     staleTime: 30000, // Cache for 30 seconds
   });
 
@@ -49,7 +49,7 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
   });
 
   const isPublished = publishStatus?.published || false;
-  const canPublish = chatId && !isExampleChat;
+  const canPublish = chatId;
 
   const handlePublishToggle = () => {
     if (!canPublish) return;
@@ -71,7 +71,7 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
             {isExampleChat && (
               <div className="flex items-center gap-1 px-2 py-1 bg-orange-100 border border-orange-200 rounded-md">
                 <Eye className="w-3 h-3 text-orange-600" />
-                <span className="text-xs font-medium text-orange-700">Read-only Example</span>
+                <span className="text-xs font-medium text-orange-700">Example</span>
               </div>
             )}
             {isPublished && !isExampleChat && (
@@ -109,7 +109,7 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
           </a>
         </Button>
 
-        {canPublish && (
+        {canPublish && !isPublished && (
           <Button
             onClick={handlePublishToggle}
             disabled={publishMutation.isPending || isLoadingPublishStatus}

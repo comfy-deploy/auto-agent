@@ -1185,8 +1185,9 @@ async function generateAIMetadata(messages: any[], chatId: string): Promise<{ ti
     });
 
     const result = await generateObject({
-      model: "xai/grok-4",
+      model: "anthropic/claude-4-sonnet",
       schema: metadataSchema,
+      maxRetries: 3,
       prompt: `Analyze this AI conversation and generate SEO-optimized metadata:
 
 CONVERSATION:
