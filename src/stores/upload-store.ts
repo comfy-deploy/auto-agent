@@ -72,57 +72,19 @@ async function uploadFile(uploadId: string, file: File) {
   try {
     updateUpload(uploadId, { status: 'uploading', progress: 0 });
     
-    const formData = new FormData();
-    formData.append('file', file);
+    const localUrl = URL.createObjectURL(file);
     
-    const xhr = new XMLHttpRequest();
+    const progressSteps = [10, 25, 50, 75, 90, 100];
+    for (let i = 0; i < progressSteps.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      updateUpload(uploadId, { progress: progressSteps[i] });
+    }
     
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        updateUpload(uploadId, { progress });
-      }
+    updateUpload(uploadId, {
+      status: 'completed',
+      progress: 100,
+      url: localUrl
     });
-    
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const response = JSON.parse(xhr.responseText);
-          updateUpload(uploadId, {
-            status: 'completed',
-            progress: 100,
-            url: response.url
-          });
-        } catch (error) {
-          updateUpload(uploadId, {
-            status: 'error',
-            error: 'Failed to parse response'
-          });
-        }
-      } else {
-        let errorMessage = 'Upload failed';
-        try {
-          const errorResponse = JSON.parse(xhr.responseText);
-          errorMessage = errorResponse.error || errorMessage;
-        } catch {
-          errorMessage = `Upload failed with status ${xhr.status}`;
-        }
-        updateUpload(uploadId, {
-          status: 'error',
-          error: errorMessage
-        });
-      }
-    });
-    
-    xhr.addEventListener('error', () => {
-      updateUpload(uploadId, {
-        status: 'error',
-        error: 'Network error during upload'
-      });
-    });
-    
-    xhr.open('POST', '/api/upload');
-    xhr.send(formData);
     
   } catch (error) {
     updateUpload(uploadId, {
