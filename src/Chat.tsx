@@ -95,7 +95,16 @@ export function Chat(props: {
     }
   });
 
-  const { uploads, addUpload } = useUploadStore();
+  let uploads, addUpload;
+  try {
+    const uploadStore = useUploadStore();
+    uploads = uploadStore.uploads || [];
+    addUpload = uploadStore.addUpload || (() => {});
+  } catch (error) {
+    console.error('Upload store error:', error);
+    uploads = [];
+    addUpload = () => {};
+  }
 
   // Helper function to upload with progress tracking
 
@@ -170,7 +179,7 @@ export function Chat(props: {
       });
     });
 
-    const completedUploads = uploads.filter(upload => upload.status === 'completed' && upload.url);
+    const completedUploads = (uploads || []).filter(upload => upload.status === 'completed' && upload.url);
     completedUploads.forEach((upload) => {
       mediaItems.push({
         id: upload.id,
@@ -846,17 +855,17 @@ export function Chat(props: {
           
           {/* Test element to verify rendering */}
           <div className="pt-2 text-red-500 font-bold">
-            TEST: Media bar is rendering! (v2)
+            TEST: Media bar is rendering! (v3) - uploads: {uploads?.length || 0}
           </div>
 
           {/* Upload Progress */}
-          {uploads.filter(u => u.status === 'uploading' || u.status === 'pending').length > 0 && (
+          {(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').length > 0 && (
             <div className="pt-2 space-y-2">
               <div className="text-sm font-medium text-foreground">
-                Uploading ({uploads.filter(u => u.status === 'uploading' || u.status === 'pending').length})
+                Uploading ({(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').length})
               </div>
               <div className="flex gap-2 overflow-x-auto">
-                {uploads.filter(u => u.status === 'uploading' || u.status === 'pending').map((upload) => (
+                {(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').map((upload) => (
                   <div key={upload.id} className="flex-shrink-0 w-16 h-16 rounded-lg border bg-background overflow-hidden relative">
                     <div className="absolute inset-0 bg-muted animate-pulse" />
                     <div className="absolute bottom-0 left-0 right-0 bg-primary h-1" style={{ width: `${upload.progress}%` }} />
@@ -899,7 +908,7 @@ export function Chat(props: {
           )}
 
           {/* Upload Drop Zone (when no media) */}
-          {(filteredMediaItems.length === 0 && uploads.length === 0) && (
+          {(filteredMediaItems.length === 0 && (uploads || []).length === 0) && (
             <div 
               className="pt-2 pb-4 px-4 text-center text-muted-foreground hover:bg-muted/30 transition-colors cursor-pointer border-dashed border-2 border-muted rounded-lg"
               onDrop={handleFileDrop}
@@ -918,7 +927,7 @@ export function Chat(props: {
 
           {/* Debug info */}
           <div className="pt-2 text-xs text-muted-foreground">
-            Debug: filteredMediaItems={filteredMediaItems.length}, uploads={uploads.length}
+            Debug: filteredMediaItems={filteredMediaItems.length}, uploads={(uploads || []).length}
           </div>
 
           <div className={
@@ -1123,7 +1132,11 @@ export function Chat(props: {
           const files = Array.from(e.target.files || []);
           files.forEach(file => {
             if (file.size <= 20 * 1024 * 1024) {
-              addUpload(file);
+              try {
+                addUpload(file);
+              } catch (error) {
+                console.error('Error adding upload:', error);
+              }
             }
           });
           e.target.value = '';
