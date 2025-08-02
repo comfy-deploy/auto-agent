@@ -8,6 +8,7 @@ import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
+import { UploadProgress } from "@/components/UploadProgress";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
 import { isReadOnlyChat } from "@/lib/constants";
@@ -27,8 +28,19 @@ export function Chat(props: {
   });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
-  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [pendingUploads, setPendingUploads] = useState<Array<{
+    id: string;
+    file: File;
+    progress: number;
+    url?: string;
+  }>>([]);
+  const [uploadedImages, setUploadedImages] = useState<Array<{
+    id: string;
+    url: string;
+    fileName: string;
+  }>>([]);
 
   // console.log("props.chatId", props.chatId);
 
@@ -72,36 +84,89 @@ export function Chat(props: {
     }
   });
 
-  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string; chatId?: string }, Error, File>({
-    mutationFn: async (file: File) => {
+  // Helper function to upload with progress tracking
+  const uploadWithProgress = async (file: File, uploadId: string) => {
+    return new Promise<{ url: string; chatId?: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          setPendingUploads(prev => 
+            prev.map(upload => 
+              upload.id === uploadId 
+                ? { ...upload, progress }
+                : upload
+            )
+          );
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (error) {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'));
+      });
+      
       const formData = new FormData();
       formData.append('file', file);
       if (props.chatId) {
         formData.append('chatId', props.chatId);
       }
       
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      xhr.open('POST', '/api/upload');
+      xhr.send(formData);
+    });
+  };
+
+  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string; chatId?: string }, Error, File>({
+    mutationFn: async (file: File) => {
+      const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Upload failed');
+      setPendingUploads(prev => [...prev, {
+        id: uploadId,
+        file,
+        progress: 0
+      }]);
+      
+      try {
+        const result = await uploadWithProgress(file, uploadId);
+        
+        setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
+        
+        setUploadedImages(prev => [...prev, {
+          id: uploadId,
+          url: result.url,
+          fileName: file.name
+        }]);
+        
+        return result;
+      } catch (error) {
+        setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
+        throw error;
       }
-      
-      return response.json();
     },
     onSuccess: (data) => {
       if (data.chatId && !props.chatId) {
         window.history.replaceState({}, '', `/chat/${data.chatId}`);
         setChatId(data.chatId);
       }
-      
-      setUploadedFileUrl(data.url);
-      const currentValue = promptInputValue || '';
-      const newValue = currentValue ? `${currentValue}\n\nImage: ${data.url}` : `Image: ${data.url}`;
-      setPromptInputValue(newValue);
     },
     onError: (error) => {
       console.error('Upload failed:', error);
@@ -293,13 +358,27 @@ export function Chat(props: {
 
     if (promptInputRef.current?.value.trim()) {
       trackChatEvent('send_message');
+      
+      let messageText = promptInputRef.current?.value;
+      
+      if (uploadedImages.length > 0) {
+        const imageReferences = uploadedImages.map((image, index) => {
+          const reference = `@image${index + 1}`;
+          return { reference, url: image.url, fileName: image.fileName };
+        });
+        
+        const imageRefs = imageReferences.map(ref => ref.reference).join(' ');
+        messageText = `${messageText}\n\n${imageRefs}`;
+      }
+      
       sendMessage({
         role: "user",
-        text: promptInputRef.current?.value,
+        text: messageText,
       });
+      
       promptInputRef.current.value = "";
       setPromptInputValue("");
-      setUploadedFileUrl(null); // Clear uploaded file URL after sending
+      setUploadedImages([]); // Clear uploaded images after sending
     }
   };
 
@@ -314,6 +393,78 @@ export function Chat(props: {
   const handleImageButtonClick = () => {
     if (isReadOnly) return;
     fileInputRef.current?.click();
+  };
+
+  // Helper function to remove uploaded image
+  const removeUploadedImage = (imageId: string) => {
+    setUploadedImages(prev => prev.filter(img => img.id !== imageId));
+  };
+
+  // Helper function to cancel pending upload
+  const cancelPendingUpload = (uploadId: string) => {
+    setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
+  };
+
+  const renderMessageWithImages = (text: string) => {
+    const imageRegex = /@image(\d+)/g;
+    const parts = text.split(imageRegex);
+    const elements: React.ReactNode[] = [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        // Regular text part
+        if (parts[i].trim()) {
+          elements.push(
+            <ReactMarkdown 
+              key={`text-${i}`}
+              components={{
+                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+              }}
+            >
+              {parts[i]}
+            </ReactMarkdown>
+          );
+        }
+      } else {
+        const imageNumber = parseInt(parts[i]);
+        if (imageNumber) {
+          elements.push(
+            <div key={`image-${i}`} className="my-2">
+              <div className="inline-flex items-center gap-2 px-2 py-1 bg-muted rounded text-sm">
+                <Image className="w-4 h-4" />
+                <span>@image{imageNumber}</span>
+              </div>
+            </div>
+          );
+        }
+      }
+    }
+    
+    return elements.length > 0 ? elements : (
+      <ReactMarkdown 
+        components={{
+          p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+          ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+          li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+          h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    );
   };
 
   // Handle "Try now" functionality for read-only chats
@@ -740,21 +891,9 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <ReactMarkdown 
-                              components={{
-                                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
-                                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
-                                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
-                                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
-                                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
-                                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
-                                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
-                                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                                em: ({ children }) => <em className="italic">{children}</em>,
-                              }}
-                            >
-                              {part.text}
-                            </ReactMarkdown>
+                            <div className="space-y-2">
+                              {renderMessageWithImages(part.text)}
+                            </div>
                           </div>
 
                         </div>
@@ -774,10 +913,62 @@ export function Chat(props: {
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
+          {/* Pending Uploads and Uploaded Images */}
+          {(pendingUploads.length > 0 || uploadedImages.length > 0) && (
+            <div className="pt-2">
+              <div className="flex gap-1 mb-2">
+                <span className="text-xs text-muted-foreground font-medium">
+                  Ready to send:
+                </span>
+              </div>
+              
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                {/* Pending uploads with progress bars */}
+                {pendingUploads.map((upload) => (
+                  <UploadProgress
+                    key={upload.id}
+                    progress={upload.progress}
+                    fileName={upload.file.name}
+                    onCancel={() => cancelPendingUpload(upload.id)}
+                  />
+                ))}
+                
+                {/* Uploaded images ready to send */}
+                {uploadedImages.map((image) => (
+                  <div key={image.id} className="relative flex-shrink-0 w-16 h-16 rounded-lg border bg-muted overflow-hidden group">
+                    <img
+                      src={image.url}
+                      alt={image.fileName}
+                      className="w-full h-full object-cover"
+                    />
+                    
+                    {/* Remove button */}
+                    <button
+                      onClick={() => removeUploadedImage(image.id)}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                      title="Remove image"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    
+                    {/* File name overlay */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 truncate">
+                      {image.fileName}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI-Generated Media Items */}
           {mediaItems.length > 0 && (
             <div className="pt-2">
               {/* Filter Controls */}
               <div className="flex gap-1 mb-2">
+                <span className="text-xs text-muted-foreground font-medium mr-2">
+                  AI Generated:
+                </span>
                 {['all', 'images', 'videos'].map((filter) => (
                   <button
                     key={filter}
