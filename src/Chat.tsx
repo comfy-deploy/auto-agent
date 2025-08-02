@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play, Image } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
@@ -27,6 +27,8 @@ export function Chat(props: {
   });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
+  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // console.log("props.chatId", props.chatId);
 
@@ -67,6 +69,39 @@ export function Chat(props: {
     onSuccess: (data) => {
       trackChatEvent('start_chat');
       setChatId(data.chatId);
+    }
+  });
+
+  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string }, Error, File>({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('chatId', props.chatId);
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setUploadedFileUrl(data.url);
+      const currentValue = promptInputRef.current?.value || '';
+      const newValue = currentValue ? `${currentValue}\n\nImage: ${data.url}` : `Image: ${data.url}`;
+      if (promptInputRef.current) {
+        promptInputRef.current.value = newValue;
+        setPromptInputValue(newValue);
+      }
+    },
+    onError: (error) => {
+      console.error('Upload failed:', error);
+      alert(`Upload failed: ${error.message}`);
     }
   });
 
@@ -260,7 +295,35 @@ export function Chat(props: {
       });
       promptInputRef.current.value = "";
       setPromptInputValue("");
+      setUploadedFileUrl(null); // Clear uploaded file URL after sending
     }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!props.chatId) {
+      // Create chat first if it doesn't exist
+      try {
+        const { chatId } = await createChat();
+        setTimeout(() => {
+          uploadFile(file);
+        }, 100);
+      } catch (error) {
+        console.error('Failed to create chat:', error);
+        alert('Failed to create chat. Please try again.');
+      }
+    } else {
+      uploadFile(file);
+    }
+
+    event.target.value = '';
+  };
+
+  const handleImageButtonClick = () => {
+    if (isReadOnly) return;
+    fileInputRef.current?.click();
   };
 
   // Handle "Try now" functionality for read-only chats
@@ -395,6 +458,29 @@ export function Chat(props: {
                   }}
                   required
                 />
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                <Button
+                  type="button"
+                  onClick={handleImageButtonClick}
+                  className="rounded-full h-12 w-12"
+                  disabled={isLoading || isUploading || isReadOnly}
+                  size="icon"
+                  variant="outline"
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Image className="w-5 h-5" />
+                  )}
+                </Button>
 
                 <Button
                   type="submit"
@@ -809,6 +895,21 @@ export function Chat(props: {
                     }}
                     required
                   />
+
+                  <Button
+                    type="button"
+                    onClick={handleImageButtonClick}
+                    className="rounded-full"
+                    disabled={isLoading || isUploading || isReadOnly}
+                    size="icon"
+                    variant="outline"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Image className="w-4 h-4" />
+                    )}
+                  </Button>
 
                   <Button
                     type="submit"
