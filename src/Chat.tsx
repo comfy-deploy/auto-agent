@@ -3,11 +3,13 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play, Image } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
+import { UploadProgress } from "@/components/UploadProgress";
+import { useUploadStore } from "./stores/upload-store";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
 import { isReadOnlyChat } from "@/lib/constants";
@@ -27,6 +29,8 @@ export function Chat(props: {
   });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
 
   // console.log("props.chatId", props.chatId);
 
@@ -69,6 +73,8 @@ export function Chat(props: {
       setChatId(data.chatId);
     }
   });
+
+  // Helper function to upload with progress tracking
 
   // Fetch example chats for the welcome screen
   const { data: exampleChats = [], isLoading: isLoadingExamples } = useQuery({
@@ -254,13 +260,108 @@ export function Chat(props: {
 
     if (promptInputRef.current?.value.trim()) {
       trackChatEvent('send_message');
+      
+      let messageText = promptInputRef.current?.value;
+      
+      const { getCompletedUrls, clearCompleted } = useUploadStore.getState();
+      const completedUrls = getCompletedUrls();
+      
+      if (completedUrls.length > 0) {
+        const imageMarkdown = completedUrls.map(url => `![image](${url})`).join('\n');
+        messageText = `${messageText}\n\n${imageMarkdown}`;
+      }
+      
       sendMessage({
         role: "user",
-        text: promptInputRef.current?.value,
+        text: messageText,
       });
+      
+      if (completedUrls.length > 0) {
+        clearCompleted();
+      }
+      
       promptInputRef.current.value = "";
       setPromptInputValue("");
     }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const { addUpload } = useUploadStore.getState();
+    addUpload(file);
+    event.target.value = '';
+  };
+
+  const handleImageButtonClick = () => {
+    if (isReadOnly) return;
+    fileInputRef.current?.click();
+  };
+
+
+  const renderMessageWithImages = (text: string) => {
+    const imageRegex = /@image(\d+)/g;
+    const parts = text.split(imageRegex);
+    const elements: React.ReactNode[] = [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        // Regular text part
+        if (parts[i].trim()) {
+          elements.push(
+            <ReactMarkdown 
+              key={`text-${i}`}
+              components={{
+                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
+              }}
+            >
+              {parts[i]}
+            </ReactMarkdown>
+          );
+        }
+      } else {
+        const imageNumber = parseInt(parts[i]);
+        if (imageNumber) {
+          elements.push(
+            <div key={`image-${i}`} className="my-2">
+              <div className="inline-flex items-center gap-2 px-2 py-1 bg-muted rounded text-sm">
+                <Image className="w-4 h-4" />
+                <span>@image{imageNumber}</span>
+              </div>
+            </div>
+          );
+        }
+      }
+    }
+    
+    return elements.length > 0 ? elements : (
+      <ReactMarkdown 
+        components={{
+          p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+          ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+          li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+          h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    );
   };
 
   // Handle "Try now" functionality for read-only chats
@@ -395,6 +496,25 @@ export function Chat(props: {
                   }}
                   required
                 />
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                <Button
+                  type="button"
+                  onClick={handleImageButtonClick}
+                  className="rounded-full h-12 w-12"
+                  disabled={isLoading || isReadOnly}
+                  size="icon"
+                  variant="outline"
+                >
+                  <Image className="w-5 h-5" />
+                </Button>
 
                 <Button
                   type="submit"
@@ -664,21 +784,9 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <ReactMarkdown 
-                              components={{
-                                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
-                                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
-                                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
-                                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
-                                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
-                                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
-                                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
-                                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                                em: ({ children }) => <em className="italic">{children}</em>,
-                              }}
-                            >
-                              {part.text}
-                            </ReactMarkdown>
+                            <div className="space-y-2">
+                              {renderMessageWithImages(part.text)}
+                            </div>
                           </div>
 
                         </div>
@@ -698,10 +806,15 @@ export function Chat(props: {
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
+
+          {/* AI-Generated Media Items */}
           {mediaItems.length > 0 && (
             <div className="pt-2">
               {/* Filter Controls */}
               <div className="flex gap-1 mb-2">
+                <span className="text-xs text-muted-foreground font-medium mr-2">
+                  AI Generated:
+                </span>
                 {['all', 'images', 'videos'].map((filter) => (
                   <button
                     key={filter}
@@ -809,6 +922,17 @@ export function Chat(props: {
                     }}
                     required
                   />
+
+                  <Button
+                    type="button"
+                    onClick={handleImageButtonClick}
+                    className="rounded-full"
+                    disabled={isLoading || isReadOnly}
+                    size="icon"
+                    variant="outline"
+                  >
+                    <Image className="w-4 h-4" />
+                  </Button>
 
                   <Button
                     type="submit"
