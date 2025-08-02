@@ -95,10 +95,7 @@ export function Chat(props: {
     }
   });
 
-  const uploads: any[] = [];
-  const addUpload = (file: File) => {
-    console.log('Upload called with file:', file.name);
-  };
+  const { uploads, addUpload } = useUploadStore();
 
   // Helper function to upload with progress tracking
 
