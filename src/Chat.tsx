@@ -72,11 +72,13 @@ export function Chat(props: {
     }
   });
 
-  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string }, Error, File>({
+  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string; chatId?: string }, Error, File>({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('chatId', props.chatId);
+      if (props.chatId) {
+        formData.append('chatId', props.chatId);
+      }
       
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -91,13 +93,15 @@ export function Chat(props: {
       return response.json();
     },
     onSuccess: (data) => {
-      setUploadedFileUrl(data.url);
-      const currentValue = promptInputRef.current?.value || '';
-      const newValue = currentValue ? `${currentValue}\n\nImage: ${data.url}` : `Image: ${data.url}`;
-      if (promptInputRef.current) {
-        promptInputRef.current.value = newValue;
-        setPromptInputValue(newValue);
+      if (data.chatId && !props.chatId) {
+        window.history.replaceState({}, '', `/chat/${data.chatId}`);
+        setChatId(data.chatId);
       }
+      
+      setUploadedFileUrl(data.url);
+      const currentValue = promptInputValue || '';
+      const newValue = currentValue ? `${currentValue}\n\nImage: ${data.url}` : `Image: ${data.url}`;
+      setPromptInputValue(newValue);
     },
     onError: (error) => {
       console.error('Upload failed:', error);
@@ -303,21 +307,7 @@ export function Chat(props: {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!props.chatId) {
-      // Create chat first if it doesn't exist
-      try {
-        const { chatId } = await createChat();
-        setTimeout(() => {
-          uploadFile(file);
-        }, 100);
-      } catch (error) {
-        console.error('Failed to create chat:', error);
-        alert('Failed to create chat. Please try again.');
-      }
-    } else {
-      uploadFile(file);
-    }
-
+    uploadFile(file);
     event.target.value = '';
   };
 

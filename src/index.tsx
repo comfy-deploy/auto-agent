@@ -1,4 +1,4 @@
-import { RedisClient, serve, spawn, write } from "bun";
+import { RedisClient, serve, spawn, write, S3Client } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
 import { z } from "zod";
@@ -8,7 +8,6 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 import { Ratelimit } from "@upstash/ratelimit";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // TypeScript declaration for globalThis extension
 declare global {
@@ -2273,14 +2272,21 @@ async function startServer() {
           try {
             const formData = await req.formData();
             const file = formData.get('file') as File;
-            const chatId = formData.get('chatId') as string;
+            let chatId = formData.get('chatId') as string;
 
             if (!file) {
               return Response.json({ error: 'No file provided' }, { status: 400 });
             }
 
             if (!chatId) {
-              return Response.json({ error: 'No chatId provided' }, { status: 400 });
+              chatId = generateId();
+              
+              // Prevent creating new chats with example IDs
+              if (READ_ONLY_EXAMPLE_CHAT_IDS.includes(chatId as any)) {
+                chatId = generateId(); // Generate a new one
+              }
+              
+              console.log(`Generated chatId: ${chatId} for upload`);
             }
 
             // Validate file type
@@ -2295,37 +2301,28 @@ async function startServer() {
               return Response.json({ error: 'File size must be less than 20MB' }, { status: 400 });
             }
 
-            // Initialize S3 client
-            const s3Client = new S3Client({
-              region: process.env.AWS_REGION,
-              credentials: {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-              },
-            });
-
             // Generate unique filename
             const timestamp = Date.now();
             const fileExtension = file.name.split('.').pop();
             const fileName = `${timestamp}-${file.name}`;
             const key = `uploads/${chatId}/${fileName}`;
 
-            // Convert file to buffer
-            const buffer = await file.arrayBuffer();
-
-            const uploadCommand = new PutObjectCommand({
-              Bucket: process.env.AWS_S3_BUCKET!,
-              Key: key,
-              Body: new Uint8Array(buffer),
-              ContentType: file.type,
+            const s3Client = new S3Client({
+              endpoint: `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`,
+              region: process.env.AWS_REGION!,
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
             });
 
-            await s3Client.send(uploadCommand);
+            await s3Client.write(key, file, {
+              type: file.type,
+            });
 
-            // Generate public URL
             const fileUrl = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+            
+            console.log(`Successfully uploaded: ${fileName} -> ${fileUrl}`);
 
-            return Response.json({ url: fileUrl });
+            return Response.json({ url: fileUrl, chatId });
           } catch (error) {
             console.error('Upload error:', error);
             return Response.json({ error: 'Upload failed' }, { status: 500 });
