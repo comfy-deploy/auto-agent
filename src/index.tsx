@@ -863,7 +863,7 @@ async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<u
 async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   try {
     const transport = new StdioClientTransport({
-      command: 'npx',
+      command: 'bunx',
       args: ['y', 'comfydeploy-mcp'],
       env: {
         API_KEY: process.env.COMFY_DEPLOY_API_KEY
