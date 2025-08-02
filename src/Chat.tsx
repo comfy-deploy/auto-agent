@@ -9,6 +9,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { UploadProgress } from "@/components/UploadProgress";
+import { useUploadStore } from "./stores/upload-store";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
 import { isReadOnlyChat } from "@/lib/constants";
@@ -30,17 +31,6 @@ export function Chat(props: {
   const [promptInputValue, setPromptInputValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [pendingUploads, setPendingUploads] = useState<Array<{
-    id: string;
-    file: File;
-    progress: number;
-    url?: string;
-  }>>([]);
-  const [uploadedImages, setUploadedImages] = useState<Array<{
-    id: string;
-    url: string;
-    fileName: string;
-  }>>([]);
 
   // console.log("props.chatId", props.chatId);
 
@@ -85,94 +75,6 @@ export function Chat(props: {
   });
 
   // Helper function to upload with progress tracking
-  const uploadWithProgress = async (file: File, uploadId: string) => {
-    return new Promise<{ url: string; chatId?: string }>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          setPendingUploads(prev => 
-            prev.map(upload => 
-              upload.id === uploadId 
-                ? { ...upload, progress }
-                : upload
-            )
-          );
-        }
-      });
-      
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const response = JSON.parse(xhr.responseText);
-            resolve(response);
-          } catch (error) {
-            reject(new Error('Invalid response format'));
-          }
-        } else {
-          try {
-            const error = JSON.parse(xhr.responseText);
-            reject(new Error(error.error || 'Upload failed'));
-          } catch {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        }
-      });
-      
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload'));
-      });
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      if (props.chatId) {
-        formData.append('chatId', props.chatId);
-      }
-      
-      xhr.open('POST', '/api/upload');
-      xhr.send(formData);
-    });
-  };
-
-  const { mutateAsync: uploadFile, isPending: isUploading } = useMutation<{ url: string; chatId?: string }, Error, File>({
-    mutationFn: async (file: File) => {
-      const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      setPendingUploads(prev => [...prev, {
-        id: uploadId,
-        file,
-        progress: 0
-      }]);
-      
-      try {
-        const result = await uploadWithProgress(file, uploadId);
-        
-        setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
-        
-        setUploadedImages(prev => [...prev, {
-          id: uploadId,
-          url: result.url,
-          fileName: file.name
-        }]);
-        
-        return result;
-      } catch (error) {
-        setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
-        throw error;
-      }
-    },
-    onSuccess: (data) => {
-      if (data.chatId && !props.chatId) {
-        window.history.replaceState({}, '', `/chat/${data.chatId}`);
-        setChatId(data.chatId);
-      }
-    },
-    onError: (error) => {
-      console.error('Upload failed:', error);
-      alert(`Upload failed: ${error.message}`);
-    }
-  });
 
   // Fetch example chats for the welcome screen
   const { data: exampleChats = [], isLoading: isLoadingExamples } = useQuery({
@@ -361,14 +263,12 @@ export function Chat(props: {
       
       let messageText = promptInputRef.current?.value;
       
-      if (uploadedImages.length > 0) {
-        const imageReferences = uploadedImages.map((image, index) => {
-          const reference = `@image${index + 1}`;
-          return { reference, url: image.url, fileName: image.fileName };
-        });
-        
-        const imageRefs = imageReferences.map(ref => ref.reference).join(' ');
-        messageText = `${messageText}\n\n${imageRefs}`;
+      const { getCompletedUrls, clearCompleted } = useUploadStore.getState();
+      const completedUrls = getCompletedUrls();
+      
+      if (completedUrls.length > 0) {
+        const imageMarkdown = completedUrls.map(url => `![image](${url})`).join('\n');
+        messageText = `${messageText}\n\n${imageMarkdown}`;
       }
       
       sendMessage({
@@ -376,9 +276,12 @@ export function Chat(props: {
         text: messageText,
       });
       
+      if (completedUrls.length > 0) {
+        clearCompleted();
+      }
+      
       promptInputRef.current.value = "";
       setPromptInputValue("");
-      setUploadedImages([]); // Clear uploaded images after sending
     }
   };
 
@@ -386,7 +289,8 @@ export function Chat(props: {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    uploadFile(file);
+    const { addUpload } = useUploadStore.getState();
+    addUpload(file);
     event.target.value = '';
   };
 
@@ -395,15 +299,6 @@ export function Chat(props: {
     fileInputRef.current?.click();
   };
 
-  // Helper function to remove uploaded image
-  const removeUploadedImage = (imageId: string) => {
-    setUploadedImages(prev => prev.filter(img => img.id !== imageId));
-  };
-
-  // Helper function to cancel pending upload
-  const cancelPendingUpload = (uploadId: string) => {
-    setPendingUploads(prev => prev.filter(upload => upload.id !== uploadId));
-  };
 
   const renderMessageWithImages = (text: string) => {
     const imageRegex = /@image(\d+)/g;
@@ -427,6 +322,7 @@ export function Chat(props: {
                 h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
                 strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                 em: ({ children }) => <em className="italic">{children}</em>,
+                img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
               }}
             >
               {parts[i]}
@@ -460,6 +356,7 @@ export function Chat(props: {
           h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
+          img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
         }}
       >
         {text}
@@ -612,15 +509,11 @@ export function Chat(props: {
                   type="button"
                   onClick={handleImageButtonClick}
                   className="rounded-full h-12 w-12"
-                  disabled={isLoading || isUploading || isReadOnly}
+                  disabled={isLoading || isReadOnly}
                   size="icon"
                   variant="outline"
                 >
-                  {isUploading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Image className="w-5 h-5" />
-                  )}
+                  <Image className="w-5 h-5" />
                 </Button>
 
                 <Button
@@ -913,53 +806,6 @@ export function Chat(props: {
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
         {/* Media Gallery */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
-          {/* Pending Uploads and Uploaded Images */}
-          {(pendingUploads.length > 0 || uploadedImages.length > 0) && (
-            <div className="pt-2">
-              <div className="flex gap-1 mb-2">
-                <span className="text-xs text-muted-foreground font-medium">
-                  Ready to send:
-                </span>
-              </div>
-              
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                {/* Pending uploads with progress bars */}
-                {pendingUploads.map((upload) => (
-                  <UploadProgress
-                    key={upload.id}
-                    progress={upload.progress}
-                    fileName={upload.file.name}
-                    onCancel={() => cancelPendingUpload(upload.id)}
-                  />
-                ))}
-                
-                {/* Uploaded images ready to send */}
-                {uploadedImages.map((image) => (
-                  <div key={image.id} className="relative flex-shrink-0 w-16 h-16 rounded-lg border bg-muted overflow-hidden group">
-                    <img
-                      src={image.url}
-                      alt={image.fileName}
-                      className="w-full h-full object-cover"
-                    />
-                    
-                    {/* Remove button */}
-                    <button
-                      onClick={() => removeUploadedImage(image.id)}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                      title="Remove image"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                    
-                    {/* File name overlay */}
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-1 py-0.5 truncate">
-                      {image.fileName}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* AI-Generated Media Items */}
           {mediaItems.length > 0 && (
@@ -1081,15 +927,11 @@ export function Chat(props: {
                     type="button"
                     onClick={handleImageButtonClick}
                     className="rounded-full"
-                    disabled={isLoading || isUploading || isReadOnly}
+                    disabled={isLoading || isReadOnly}
                     size="icon"
                     variant="outline"
                   >
-                    {isUploading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Image className="w-4 h-4" />
-                    )}
+                    <Image className="w-4 h-4" />
                   </Button>
 
                   <Button

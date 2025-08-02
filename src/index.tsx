@@ -2273,21 +2273,9 @@ async function startServer() {
           try {
             const formData = await req.formData();
             const file = formData.get('file') as File;
-            let chatId = formData.get('chatId') as string;
 
             if (!file) {
               return Response.json({ error: 'No file provided' }, { status: 400 });
-            }
-
-            if (!chatId) {
-              chatId = generateId();
-              
-              // Prevent creating new chats with example IDs
-              if (READ_ONLY_EXAMPLE_CHAT_IDS.includes(chatId as any)) {
-                chatId = generateId(); // Generate a new one
-              }
-              
-              console.log(`Generated chatId: ${chatId} for upload`);
             }
 
             // Validate file type
@@ -2306,7 +2294,7 @@ async function startServer() {
             const timestamp = Date.now();
             const fileExtension = file.name.split('.').pop();
             const fileName = `${timestamp}-${file.name}`;
-            const key = `uploads/${chatId}/${fileName}`;
+            const key = `uploads/${fileName}`;
 
             const s3Client = new S3Client({
               endpoint: `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`,
@@ -2323,7 +2311,7 @@ async function startServer() {
             
             console.log(`Successfully uploaded: ${fileName} -> ${fileUrl}`);
 
-            return Response.json({ url: fileUrl, chatId });
+            return Response.json({ url: fileUrl });
           } catch (error) {
             console.error('Upload error:', error);
             return Response.json({ error: 'Upload failed' }, { status: 500 });

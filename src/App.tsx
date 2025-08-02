@@ -13,6 +13,8 @@ import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
 import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
+import { FileDropZone } from "./components/FileDropZone";
+import { GlobalUploadArea } from "./components/GlobalUploadArea";
 
 const queryClient = new QueryClient();
 
@@ -150,24 +152,29 @@ export function App({
   console.log("hasMessages", hasMessages);
 
   return (
-    <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
-      {/* Always render header */}
-      <div className="sticky top-0 z-20">
-        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
-      </div>
+    <FileDropZone className="w-screen flex flex-col min-h-screen">
+      <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
+        {/* Always render header */}
+        <div className="sticky top-0 z-20">
+          <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
+        </div>
 
-      <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
-        <Chat
-          key={chatId}
-          initialMessages={messages}
-          chatId={chatId}
-          setChatId={setChatId}
-          onMessagesChange={handleMessagesChange}
-          onLoadingChange={handleLoadingChange}
-          isReadOnly={isReadOnly}
-        />
+        {/* Global upload area */}
+        <GlobalUploadArea />
+
+        <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
+          <Chat
+            key={chatId}
+            initialMessages={messages}
+            chatId={chatId}
+            setChatId={setChatId}
+            onMessagesChange={handleMessagesChange}
+            onLoadingChange={handleLoadingChange}
+            isReadOnly={isReadOnly}
+          />
+        </div>
       </div>
-    </div>
+    </FileDropZone>
   );
 }
 
