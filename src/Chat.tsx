@@ -30,7 +30,28 @@ export function Chat(props: {
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    files.forEach(file => {
+      if (file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024) {
+        addUpload(file);
+      }
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
 
   // console.log("props.chatId", props.chatId);
 
@@ -73,6 +94,11 @@ export function Chat(props: {
       setChatId(data.chatId);
     }
   });
+
+  const uploads: any[] = [];
+  const addUpload = (file: File) => {
+    console.log('Upload called with file:', file.name);
+  };
 
   // Helper function to upload with progress tracking
 
@@ -118,10 +144,11 @@ export function Chat(props: {
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Extract all media items from messages
+  // Extract all media items from messages and uploads
   const getAllMediaItems = () => {
-    const mediaItems: Array<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number }> = [];
+    const mediaItems: Array<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number, source: 'generated' | 'uploaded' }> = [];
 
+    // Add generated media from messages
     messages.forEach((message) => {
       message.parts.forEach((part, partIndex) => {
         if (part.type?.startsWith("tool-") && (part as any).output && Array.isArray((part as any).output)) {
@@ -137,11 +164,24 @@ export function Chat(props: {
                 width: item.width,
                 height: item.height,
                 messageId: message.id,
-                partIndex
+                partIndex,
+                source: 'generated'
               });
             }
           });
         }
+      });
+    });
+
+    const completedUploads = uploads.filter(upload => upload.status === 'completed' && upload.url);
+    completedUploads.forEach((upload) => {
+      mediaItems.push({
+        id: upload.id,
+        type: 'image', // uploads are currently image-only
+        url: upload.url!,
+        messageId: 'upload',
+        partIndex: 0,
+        source: 'uploaded'
       });
     });
 
@@ -804,40 +844,85 @@ export function Chat(props: {
 
       {/* Input Area */}
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
-        {/* Media Gallery */}
+        {/* Enhanced Media Bar with Upload */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
+          
+          {/* Test element to verify rendering */}
+          <div className="pt-2 text-red-500 font-bold">
+            TEST: Media bar is rendering!
+          </div>
 
-          {/* AI-Generated Media Items */}
-          {mediaItems.length > 0 && (
-            <div className="pt-2">
-              {/* Filter Controls */}
-              <div className="flex gap-1 mb-2">
-                <span className="text-xs text-muted-foreground font-medium mr-2">
-                  AI Generated:
-                </span>
-                {['all', 'images', 'videos'].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setMediaFilter(filter as any)}
-                    className={cn(
-                      "px-2 py-1 rounded text-xs transition-colors capitalize",
-                      mediaFilter === filter 
-                        ? "bg-primary text-primary-foreground" 
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    )}
-                  >
-                    {filter} {filter !== 'all' && `(${mediaItems.filter(item => item.type === filter.slice(0, -1)).length})`}
-                  </button>
+          {/* Upload Progress */}
+          {uploads.filter(u => u.status === 'uploading' || u.status === 'pending').length > 0 && (
+            <div className="pt-2 space-y-2">
+              <div className="text-sm font-medium text-foreground">
+                Uploading ({uploads.filter(u => u.status === 'uploading' || u.status === 'pending').length})
+              </div>
+              <div className="flex gap-2 overflow-x-auto">
+                {uploads.filter(u => u.status === 'uploading' || u.status === 'pending').map((upload) => (
+                  <div key={upload.id} className="flex-shrink-0 w-16 h-16 rounded-lg border bg-background overflow-hidden relative">
+                    <div className="absolute inset-0 bg-muted animate-pulse" />
+                    <div className="absolute bottom-0 left-0 right-0 bg-primary h-1" style={{ width: `${upload.progress}%` }} />
+                  </div>
                 ))}
               </div>
-              
-              {/* Media Items */}
+            </div>
+          )}
+
+          {/* Media Gallery */}
+          {filteredMediaItems.length > 0 && (
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Media ({filteredMediaItems.length})</span>
+                  <div className="flex rounded-md border">
+                    {(['all', 'images', 'videos'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setMediaFilter(filter)}
+                        className={`px-2 py-1 text-xs capitalize transition-colors ${
+                          mediaFilter === filter
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <MediaGallery
                 items={filteredMediaItems}
-                onItemClick={(item) => setSelectedMediaItem(item)}
+                onItemClick={setSelectedMediaItem}
+                layout="horizontal"
+                className="pb-2"
               />
             </div>
           )}
+
+          {/* Upload Drop Zone (when no media) */}
+          {(filteredMediaItems.length === 0 && uploads.length === 0) && (
+            <div 
+              className="pt-2 pb-4 px-4 text-center text-muted-foreground hover:bg-muted/30 transition-colors cursor-pointer border-dashed border-2 border-muted rounded-lg"
+              onDrop={handleFileDrop}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="space-y-2 py-4">
+                <div className="text-2xl">📁</div>
+                <div className="text-sm">Drop images here or click to upload</div>
+                <div className="text-xs">JPG, PNG up to 20MB</div>
+              </div>
+            </div>
+          )}
+
+          {/* Debug info */}
+          <div className="pt-2 text-xs text-muted-foreground">
+            Debug: filteredMediaItems={filteredMediaItems.length}, uploads={uploads.length}
+          </div>
 
           <div className={
             cn(
@@ -1029,6 +1114,24 @@ export function Chat(props: {
         </div>,
         document.body
       )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          files.forEach(file => {
+            if (file.size <= 20 * 1024 * 1024) {
+              addUpload(file);
+            }
+          });
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }

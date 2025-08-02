@@ -14,7 +14,6 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
 import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
 import { FileDropZone } from "./components/FileDropZone";
-import { GlobalUploadArea } from "./components/GlobalUploadArea";
 
 const queryClient = new QueryClient();
 
@@ -159,8 +158,6 @@ export function App({
           <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
         </div>
 
-        {/* Global upload area */}
-        <GlobalUploadArea />
 
         <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
           <Chat
