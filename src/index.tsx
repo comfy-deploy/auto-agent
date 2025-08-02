@@ -1,6 +1,7 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream, experimental_createMCPClient } from 'ai';
+import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
 import { z } from "zod";
 import { QueryClient, dehydrate } from '@tanstack/react-query';
 // import { RedisMemoryServer } from 'redis-memory-server';
@@ -8,8 +9,6 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 import { Ratelimit } from "@upstash/ratelimit";
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
 // TypeScript declaration for globalThis extension
 declare global {
@@ -18,6 +17,8 @@ declare global {
     isShuttingDown: boolean;
     shutdownInProgress: boolean;
     gracefulShutdownSetup: boolean;
+    mcpClient: any | null; // Add MCP client storage
+    mcpClientRefCount: number; // Track how many sessions are using it
   };
 }
 
@@ -145,6 +146,8 @@ if (!globalThis.appState) {
     isShuttingDown: false,
     shutdownInProgress: false,
     gracefulShutdownSetup: false,
+    mcpClient: null,
+    mcpClientRefCount: 0,
   };
   console.log('🔄 Initializing new app state');
 } else {
@@ -162,6 +165,8 @@ function incrementActiveStreams(streamId: string) {
 function decrementActiveStreams(streamId: string) {
   globalThis.appState.activeStreams.delete(streamId);
   console.log(`📉 Active streams: ${globalThis.appState.activeStreams.size} (-${streamId})`);
+
+  releaseMCPClient();
 
   // If shutting down and no more active streams, proceed with shutdown
   if (globalThis.appState.isShuttingDown && globalThis.appState.activeStreams.size === 0 && !globalThis.appState.shutdownInProgress) {
@@ -186,6 +191,60 @@ function logActiveStreams() {
 
 function hasActiveStream(streamId: string): boolean {
   return globalThis.appState.activeStreams.has(streamId);
+}
+
+// MCP client management utilities
+async function getMCPClient() {
+  if (!globalThis.appState.mcpClient) {
+    try {
+      const transport = new Experimental_StdioMCPTransport({
+        command: 'bunx',
+        args: ['-y', 'comfydeploy-mcp'],
+        env: {
+          API_KEY: process.env.COMFY_DEPLOY_API_KEY
+        }
+      });
+
+      globalThis.appState.mcpClient = await experimental_createMCPClient({
+        transport,
+      });
+      
+      console.log('🎨 Created shared MCP client connection');
+    } catch (error) {
+      console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+      return null;
+    }
+  }
+  
+  globalThis.appState.mcpClientRefCount++;
+  console.log(`📈 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+  return globalThis.appState.mcpClient;
+}
+
+function releaseMCPClient() {
+  if (globalThis.appState.mcpClientRefCount > 0) {
+    globalThis.appState.mcpClientRefCount--;
+    console.log(`📉 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+    
+    // Close client when no more references and shutting down
+    if (globalThis.appState.mcpClientRefCount === 0 && 
+        (globalThis.appState.isShuttingDown || globalThis.appState.activeStreams.size === 0)) {
+      closeMCPClient();
+    }
+  }
+}
+
+async function closeMCPClient() {
+  if (globalThis.appState.mcpClient) {
+    try {
+      await globalThis.appState.mcpClient.close();
+      console.log('🔌 Closed MCP client connection');
+    } catch (error) {
+      console.warn('⚠️ Error closing MCP client:', error);
+    }
+    globalThis.appState.mcpClient = null;
+    globalThis.appState.mcpClientRefCount = 0;
+  }
 }
 
 const defaultModels = {
@@ -862,25 +921,18 @@ async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<u
 }
 async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   try {
-    const transport = new StdioClientTransport({
-      command: 'bunx',
-      args: ['-y', 'comfydeploy-mcp'],
-      env: {
-        API_KEY: process.env.COMFY_DEPLOY_API_KEY
-      }
-    });
-
-    const mcpClient = await experimental_createMCPClient({
-      transport,
-    });
+    const mcpClient = await getMCPClient();
+    if (!mcpClient) {
+      console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+      return {};
+    }
 
     const mcpTools = await mcpClient.tools();
-    console.log(`🎨 Created ${Object.keys(mcpTools).length} ComfyDeploy MCP tools`);
+    console.log(`🎨 Retrieved ${Object.keys(mcpTools).length} ComfyDeploy MCP tools from shared client`);
     
-    await mcpClient.close();
     return mcpTools;
   } catch (error) {
-    console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+    console.warn('⚠️ Failed to get ComfyDeploy MCP tools:', error);
     console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
     return {};
   }
@@ -2480,6 +2532,8 @@ function setupGracefulShutdown() {
     if (server && server.stop) {
       await server.stop();
     }
+
+    await closeMCPClient();
 
     console.log('✅ Graceful shutdown complete');
     process.exit(0);
