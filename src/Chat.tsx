@@ -846,7 +846,7 @@ export function Chat(props: {
           
           {/* Test element to verify rendering */}
           <div className="pt-2 text-red-500 font-bold">
-            TEST: Media bar is rendering!
+            TEST: Media bar is rendering! (v2)
           </div>
 
           {/* Upload Progress */}
