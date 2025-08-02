@@ -1,6 +1,6 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream, experimental_createMCPClient } from 'ai';
 import { z } from "zod";
 import { QueryClient, dehydrate } from '@tanstack/react-query';
 // import { RedisMemoryServer } from 'redis-memory-server';
@@ -8,6 +8,8 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 import { Ratelimit } from "@upstash/ratelimit";
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
 // TypeScript declaration for globalThis extension
 declare global {
@@ -858,6 +860,33 @@ async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<u
     return {};
   }
 }
+async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+  try {
+    const transport = new StdioClientTransport({
+      command: 'npx',
+      args: ['y', 'comfydeploy-mcp'],
+      env: {
+        API_KEY: process.env.COMFY_DEPLOY_API_KEY
+      }
+    });
+
+    const mcpClient = await experimental_createMCPClient({
+      transport,
+    });
+
+    const mcpTools = await mcpClient.tools();
+    console.log(`🎨 Created ${Object.keys(mcpTools).length} ComfyDeploy MCP tools`);
+    
+    await mcpClient.close();
+    return mcpTools;
+  } catch (error) {
+    console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+    console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+    return {};
+  }
+}
+
+
 
 export const webSearch = tool({
   description: 'Search the web for up-to-date information',
@@ -1013,30 +1042,31 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
 async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   const defaultTools = await createDefaultModelTools(writer);
-
-  // 2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
-  // 3. For specialized or unusual requests, use **model_search** to find specific models
+  const comfyDeployTools = await createComfyDeployTools(writer);
 
   return streamText({
     model: "anthropic/claude-4-sonnet",
-    system: `You are a creative agent with access to multiple fal.ai model tools:
+    system: `You are a creative agent with access to multiple AI tools:
 
-    1. **default_models**: Use predefined high-quality models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
+    1. **default_models**: Use predefined high-quality fal.ai models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
+    2. **comfydeploy_tools**: Use ComfyDeploy for advanced ComfyUI workflows and custom node processing
     3. **webSearch**: Search the web for up-to-date information
     4. **crawlUrl**: Extract content from specific URLs when users provide links or when you need to analyze specific pages
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
     2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
-    3. If unclear about the request, use **webSearch** first
-    4. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
-    5. Plan multiple steps for complex tasks and execute them systematically
-    6. Always choose the most appropriate tool for the task
-    7. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
+    3. For advanced ComfyUI workflows, custom nodes, or specialized image processing, use **comfydeploy_tools**
+    4. If unclear about the request, use **webSearch** first
+    5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
+    6. Plan multiple steps for complex tasks and execute them systematically
+    7. Always choose the most appropriate tool for the task
+    8. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
 
     **Tools:**
     flux kontext is best for using existing images to create new images
     flux dev is best for creating images from scratch
+    ComfyDeploy tools are best for advanced workflows and custom processing
     `,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
@@ -1044,9 +1074,8 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
     tools: {
       webSearch,
       crawlUrl,
-      // default_models: defaultFalTools(writer),
       ...defaultTools,
-      // model_search: falTools(writer),
+      ...comfyDeployTools,
     },
   });
 
