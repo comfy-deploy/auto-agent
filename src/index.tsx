@@ -1,6 +1,7 @@
 import { RedisClient, serve, spawn, write } from "bun";
 import index from "./index.html";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream } from 'ai';
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, generateText, generateObject, jsonSchema, stepCountIs, streamText, tool, type ToolSet, type UIMessageStreamWriter, type UIMessage, type UIDataTypes, type UITools, streamObject, generateId, consumeStream, experimental_createMCPClient } from 'ai';
+import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
 import { z } from "zod";
 import { QueryClient, dehydrate } from '@tanstack/react-query';
 // import { RedisMemoryServer } from 'redis-memory-server';
@@ -16,6 +17,8 @@ declare global {
     isShuttingDown: boolean;
     shutdownInProgress: boolean;
     gracefulShutdownSetup: boolean;
+    mcpClient: any | null; // Add MCP client storage
+    mcpClientRefCount: number; // Track how many sessions are using it
   };
 }
 
@@ -143,6 +146,8 @@ if (!globalThis.appState) {
     isShuttingDown: false,
     shutdownInProgress: false,
     gracefulShutdownSetup: false,
+    mcpClient: null,
+    mcpClientRefCount: 0,
   };
   console.log('🔄 Initializing new app state');
 } else {
@@ -160,6 +165,8 @@ function incrementActiveStreams(streamId: string) {
 function decrementActiveStreams(streamId: string) {
   globalThis.appState.activeStreams.delete(streamId);
   console.log(`📉 Active streams: ${globalThis.appState.activeStreams.size} (-${streamId})`);
+
+  releaseMCPClient();
 
   // If shutting down and no more active streams, proceed with shutdown
   if (globalThis.appState.isShuttingDown && globalThis.appState.activeStreams.size === 0 && !globalThis.appState.shutdownInProgress) {
@@ -184,6 +191,60 @@ function logActiveStreams() {
 
 function hasActiveStream(streamId: string): boolean {
   return globalThis.appState.activeStreams.has(streamId);
+}
+
+// MCP client management utilities
+async function getMCPClient() {
+  if (!globalThis.appState.mcpClient) {
+    try {
+      const transport = new Experimental_StdioMCPTransport({
+        command: 'bunx',
+        args: ['-y', 'comfydeploy-mcp'],
+        env: {
+          API_KEY: process.env.COMFY_DEPLOY_API_KEY
+        }
+      });
+
+      globalThis.appState.mcpClient = await experimental_createMCPClient({
+        transport,
+      });
+      
+      console.log('🎨 Created shared MCP client connection');
+    } catch (error) {
+      console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+      return null;
+    }
+  }
+  
+  globalThis.appState.mcpClientRefCount++;
+  console.log(`📈 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+  return globalThis.appState.mcpClient;
+}
+
+function releaseMCPClient() {
+  if (globalThis.appState.mcpClientRefCount > 0) {
+    globalThis.appState.mcpClientRefCount--;
+    console.log(`📉 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+    
+    // Close client when no more references and shutting down
+    if (globalThis.appState.mcpClientRefCount === 0 && 
+        (globalThis.appState.isShuttingDown || globalThis.appState.activeStreams.size === 0)) {
+      closeMCPClient();
+    }
+  }
+}
+
+async function closeMCPClient() {
+  if (globalThis.appState.mcpClient) {
+    try {
+      await globalThis.appState.mcpClient.close();
+      console.log('🔌 Closed MCP client connection');
+    } catch (error) {
+      console.warn('⚠️ Error closing MCP client:', error);
+    }
+    globalThis.appState.mcpClient = null;
+    globalThis.appState.mcpClientRefCount = 0;
+  }
 }
 
 const defaultModels = {
@@ -858,6 +919,26 @@ async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<u
     return {};
   }
 }
+async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+  try {
+    const mcpClient = await getMCPClient();
+    if (!mcpClient) {
+      console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+      return {};
+    }
+
+    const mcpTools = await mcpClient.tools();
+    console.log(`🎨 Retrieved ${Object.keys(mcpTools).length} ComfyDeploy MCP tools from shared client`);
+    
+    return mcpTools;
+  } catch (error) {
+    console.warn('⚠️ Failed to get ComfyDeploy MCP tools:', error);
+    console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+    return {};
+  }
+}
+
+
 
 export const webSearch = tool({
   description: 'Search the web for up-to-date information',
@@ -1013,30 +1094,31 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
 async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   const defaultTools = await createDefaultModelTools(writer);
-
-  // 2. **model_search**: Search for specific models dynamically based on user needs - more flexible but slower
-  // 3. For specialized or unusual requests, use **model_search** to find specific models
+  const comfyDeployTools = await createComfyDeployTools(writer);
 
   return streamText({
     model: "anthropic/claude-4-sonnet",
-    system: `You are a creative agent with access to multiple fal.ai model tools:
+    system: `You are a creative agent with access to multiple AI tools:
 
-    1. **default_models**: Use predefined high-quality models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
+    1. **default_models**: Use predefined high-quality fal.ai models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
+    2. **comfydeploy_tools**: Use ComfyDeploy for advanced ComfyUI workflows and custom node processing
     3. **webSearch**: Search the web for up-to-date information
     4. **crawlUrl**: Extract content from specific URLs when users provide links or when you need to analyze specific pages
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
     2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
-    3. If unclear about the request, use **webSearch** first
-    4. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
-    5. Plan multiple steps for complex tasks and execute them systematically
-    6. Always choose the most appropriate tool for the task
-    7. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
+    3. For advanced ComfyUI workflows, custom nodes, or specialized image processing, use **comfydeploy_tools**
+    4. If unclear about the request, use **webSearch** first
+    5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
+    6. Plan multiple steps for complex tasks and execute them systematically
+    7. Always choose the most appropriate tool for the task
+    8. **CRITICAL**: When animating or editing existing images, ALWAYS pass the image_url parameter to use image-to-video or image-to-image models
 
     **Tools:**
     flux kontext is best for using existing images to create new images
     flux dev is best for creating images from scratch
+    ComfyDeploy tools are best for advanced workflows and custom processing
     `,
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(20),
@@ -1044,9 +1126,8 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
     tools: {
       webSearch,
       crawlUrl,
-      // default_models: defaultFalTools(writer),
       ...defaultTools,
-      // model_search: falTools(writer),
+      ...comfyDeployTools,
     },
   });
 
@@ -2451,6 +2532,8 @@ function setupGracefulShutdown() {
     if (server && server.stop) {
       await server.stop();
     }
+
+    await closeMCPClient();
 
     console.log('✅ Graceful shutdown complete');
     process.exit(0);

@@ -14,6 +14,7 @@
     "@ai-sdk/react": "^2.0.0-beta.25",
     "@fal-ai/client": "^1.6.1",
     "@hookform/resolvers": "^4.1.0",
+    "@modelcontextprotocol/sdk": "^1.17.1",
     "@radix-ui/react-label": "^2.1.2",
     "@radix-ui/react-select": "^2.1.6",
     "@radix-ui/react-slot": "^1.1.2",
@@ -47,5 +48,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/bun": "latest"
-  }
+  },
+  	"engines": {
+		"node": ">=20.0.0"
+	}
 }
