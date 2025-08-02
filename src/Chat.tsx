@@ -3,11 +3,13 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChat, type UIMessage } from "@ai-sdk/react";
-import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play } from "lucide-react";
+import { ArrowUp, Loader2, Search, Globe, Code, ChevronDown, ChevronRight, X, Download, MessageSquare, Play, Image } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
+import { UploadProgress } from "@/components/UploadProgress";
+import { useUploadStore } from "./stores/upload-store";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
 import { isReadOnlyChat } from "@/lib/constants";
@@ -27,6 +29,29 @@ export function Chat(props: {
   });
   const lastSentPrompt = useRef("");
   const [promptInputValue, setPromptInputValue] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    files.forEach(file => {
+      if (file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024) {
+        addUpload(file);
+      }
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
 
   // console.log("props.chatId", props.chatId);
 
@@ -70,6 +95,19 @@ export function Chat(props: {
     }
   });
 
+  let uploads, addUpload;
+  try {
+    const uploadStore = useUploadStore();
+    uploads = uploadStore.uploads || [];
+    addUpload = uploadStore.addUpload || (() => {});
+  } catch (error) {
+    console.error('Upload store error:', error);
+    uploads = [];
+    addUpload = () => {};
+  }
+
+  // Helper function to upload with progress tracking
+
   // Fetch example chats for the welcome screen
   const { data: exampleChats = [], isLoading: isLoadingExamples } = useQuery({
     queryKey: ['exampleChats'],
@@ -112,10 +150,11 @@ export function Chat(props: {
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Extract all media items from messages
+  // Extract all media items from messages and uploads
   const getAllMediaItems = () => {
-    const mediaItems: Array<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number }> = [];
+    const mediaItems: Array<{ id: string, type: 'image' | 'video', url: string, width?: number, height?: number, messageId: string, partIndex: number, source: 'generated' | 'uploaded' }> = [];
 
+    // Add generated media from messages
     messages.forEach((message) => {
       message.parts.forEach((part, partIndex) => {
         if (part.type?.startsWith("tool-") && (part as any).output && Array.isArray((part as any).output)) {
@@ -131,11 +170,24 @@ export function Chat(props: {
                 width: item.width,
                 height: item.height,
                 messageId: message.id,
-                partIndex
+                partIndex,
+                source: 'generated'
               });
             }
           });
         }
+      });
+    });
+
+    const completedUploads = (uploads || []).filter(upload => upload.status === 'completed' && upload.url);
+    completedUploads.forEach((upload) => {
+      mediaItems.push({
+        id: upload.id,
+        type: 'image', // uploads are currently image-only
+        url: upload.url!,
+        messageId: 'upload',
+        partIndex: 0,
+        source: 'uploaded'
       });
     });
 
@@ -254,13 +306,108 @@ export function Chat(props: {
 
     if (promptInputRef.current?.value.trim()) {
       trackChatEvent('send_message');
+      
+      let messageText = promptInputRef.current?.value;
+      
+      const { getCompletedUrls, clearCompleted } = useUploadStore.getState();
+      const completedUrls = getCompletedUrls();
+      
+      if (completedUrls.length > 0) {
+        const imageMarkdown = completedUrls.map(url => `![image](${url})`).join('\n');
+        messageText = `${messageText}\n\n${imageMarkdown}`;
+      }
+      
       sendMessage({
         role: "user",
-        text: promptInputRef.current?.value,
+        text: messageText,
       });
+      
+      if (completedUrls.length > 0) {
+        clearCompleted();
+      }
+      
       promptInputRef.current.value = "";
       setPromptInputValue("");
     }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const { addUpload } = useUploadStore.getState();
+    addUpload(file);
+    event.target.value = '';
+  };
+
+  const handleImageButtonClick = () => {
+    if (isReadOnly) return;
+    fileInputRef.current?.click();
+  };
+
+
+  const renderMessageWithImages = (text: string) => {
+    const imageRegex = /@image(\d+)/g;
+    const parts = text.split(imageRegex);
+    const elements: React.ReactNode[] = [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        // Regular text part
+        if (parts[i].trim()) {
+          elements.push(
+            <ReactMarkdown 
+              key={`text-${i}`}
+              components={{
+                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
+              }}
+            >
+              {parts[i]}
+            </ReactMarkdown>
+          );
+        }
+      } else {
+        const imageNumber = parseInt(parts[i]);
+        if (imageNumber) {
+          elements.push(
+            <div key={`image-${i}`} className="my-2">
+              <div className="inline-flex items-center gap-2 px-2 py-1 bg-muted rounded text-sm">
+                <Image className="w-4 h-4" />
+                <span>@image{imageNumber}</span>
+              </div>
+            </div>
+          );
+        }
+      }
+    }
+    
+    return elements.length > 0 ? elements : (
+      <ReactMarkdown 
+        components={{
+          p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
+          ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
+          li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
+          h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          img: ({ src, alt }) => <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-2" />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    );
   };
 
   // Handle "Try now" functionality for read-only chats
@@ -395,6 +542,25 @@ export function Chat(props: {
                   }}
                   required
                 />
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                <Button
+                  type="button"
+                  onClick={handleImageButtonClick}
+                  className="rounded-full h-12 w-12"
+                  disabled={isLoading || isReadOnly}
+                  size="icon"
+                  variant="outline"
+                >
+                  <Image className="w-5 h-5" />
+                </Button>
 
                 <Button
                   type="submit"
@@ -664,21 +830,9 @@ export function Chat(props: {
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           )}>
-                            <ReactMarkdown 
-                              components={{
-                                p: ({ children }) => <p className="mb-4 last:mb-0 text-start break-words">{children}</p>,
-                                ul: ({ children }) => <ul className="mb-4 text-start break-words list-disc list-inside">{children}</ul>,
-                                ol: ({ children }) => <ol className="mb-4 text-start break-words list-decimal list-inside">{children}</ol>,
-                                li: ({ children }) => <li className="mb-1 text-start break-words">{children}</li>,
-                                h1: ({ children }) => <h1 className="mb-4 text-start break-words font-semibold text-lg">{children}</h1>,
-                                h2: ({ children }) => <h2 className="mb-4 text-start break-words font-semibold text-base">{children}</h2>,
-                                h3: ({ children }) => <h3 className="mb-4 text-start break-words font-semibold">{children}</h3>,
-                                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                                em: ({ children }) => <em className="italic">{children}</em>,
-                              }}
-                            >
-                              {part.text}
-                            </ReactMarkdown>
+                            <div className="space-y-2">
+                              {renderMessageWithImages(part.text)}
+                            </div>
                           </div>
 
                         </div>
@@ -696,35 +850,85 @@ export function Chat(props: {
 
       {/* Input Area */}
       <div className="flex-shrink-0 mx-auto max-w-4xl inset-x-0 fixed bottom-0 w-full transition-all duration-500 ease-out px-3 sm:px-6">
-        {/* Media Gallery */}
+        {/* Enhanced Media Bar with Upload */}
         <div className="bg-background shadow-lg border border-gray-200 rounded-t-2xl px-2 gap-2 flex flex-col pb-2">
-          {mediaItems.length > 0 && (
-            <div className="pt-2">
-              {/* Filter Controls */}
-              <div className="flex gap-1 mb-2">
-                {['all', 'images', 'videos'].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setMediaFilter(filter as any)}
-                    className={cn(
-                      "px-2 py-1 rounded text-xs transition-colors capitalize",
-                      mediaFilter === filter 
-                        ? "bg-primary text-primary-foreground" 
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    )}
-                  >
-                    {filter} {filter !== 'all' && `(${mediaItems.filter(item => item.type === filter.slice(0, -1)).length})`}
-                  </button>
+          
+          {/* Test element to verify rendering */}
+          <div className="pt-2 text-red-500 font-bold">
+            TEST: Media bar is rendering! (v3) - uploads: {uploads?.length || 0}
+          </div>
+
+          {/* Upload Progress */}
+          {(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').length > 0 && (
+            <div className="pt-2 space-y-2">
+              <div className="text-sm font-medium text-foreground">
+                Uploading ({(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').length})
+              </div>
+              <div className="flex gap-2 overflow-x-auto">
+                {(uploads || []).filter(u => u.status === 'uploading' || u.status === 'pending').map((upload) => (
+                  <div key={upload.id} className="flex-shrink-0 w-16 h-16 rounded-lg border bg-background overflow-hidden relative">
+                    <div className="absolute inset-0 bg-muted animate-pulse" />
+                    <div className="absolute bottom-0 left-0 right-0 bg-primary h-1" style={{ width: `${upload.progress}%` }} />
+                  </div>
                 ))}
               </div>
-              
-              {/* Media Items */}
+            </div>
+          )}
+
+          {/* Media Gallery */}
+          {filteredMediaItems.length > 0 && (
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Media ({filteredMediaItems.length})</span>
+                  <div className="flex rounded-md border">
+                    {(['all', 'images', 'videos'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setMediaFilter(filter)}
+                        className={`px-2 py-1 text-xs capitalize transition-colors ${
+                          mediaFilter === filter
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <MediaGallery
                 items={filteredMediaItems}
-                onItemClick={(item) => setSelectedMediaItem(item)}
+                onItemClick={setSelectedMediaItem}
+                layout="horizontal"
+                className="pb-2"
               />
             </div>
           )}
+
+          {/* Upload Drop Zone (when no media) */}
+          {(filteredMediaItems.length === 0 && (uploads || []).length === 0) && (
+            <div 
+              className="pt-2 pb-4 px-4 text-center text-muted-foreground hover:bg-muted/30 transition-colors cursor-pointer border-dashed border-2 border-muted rounded-lg"
+              onDrop={handleFileDrop}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="space-y-2 py-4">
+                <div className="text-2xl">📁</div>
+                <div className="text-sm">Drop images here or click to upload</div>
+                <div className="text-xs">JPG, PNG up to 20MB</div>
+              </div>
+            </div>
+          )}
+
+          {/* Debug info */}
+          <div className="pt-2 text-xs text-muted-foreground">
+            Debug: filteredMediaItems={filteredMediaItems.length}, uploads={(uploads || []).length}
+          </div>
 
           <div className={
             cn(
@@ -809,6 +1013,17 @@ export function Chat(props: {
                     }}
                     required
                   />
+
+                  <Button
+                    type="button"
+                    onClick={handleImageButtonClick}
+                    className="rounded-full"
+                    disabled={isLoading || isReadOnly}
+                    size="icon"
+                    variant="outline"
+                  >
+                    <Image className="w-4 h-4" />
+                  </Button>
 
                   <Button
                     type="submit"
@@ -905,6 +1120,28 @@ export function Chat(props: {
         </div>,
         document.body
       )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          files.forEach(file => {
+            if (file.size <= 20 * 1024 * 1024) {
+              try {
+                addUpload(file);
+              } catch (error) {
+                console.error('Error adding upload:', error);
+              }
+            }
+          });
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }
