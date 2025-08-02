@@ -864,7 +864,7 @@ async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<un
   try {
     const transport = new StdioClientTransport({
       command: 'bunx',
-      args: ['comfydeploy-mcp'],
+      args: ['-y', 'comfydeploy-mcp'],
       env: {
         API_KEY: process.env.COMFY_DEPLOY_API_KEY
       }
