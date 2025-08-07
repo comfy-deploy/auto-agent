@@ -250,14 +250,19 @@ async function closeMCPClient() {
 const defaultModels = {
   image: {
     "fal-ai/flux/dev": "State of the art image generation model for general case",
+    "fal-ai/flux/krea": "FLUX Krea model for high-quality image generation with enhanced capabilities",
     "fal-ai/imagen4/preview": "Google's Imagen 4 model with enhanced detail, richer lighting, and fewer artifacts",
     "fal-ai/flux/schnell": "Fast image generation model",
+    "fal-ai/qwen-image": "Advanced image generation model with enhanced understanding",
   },
   image_editing: {
     "fal-ai/flux-kontext/dev": "State of the art image editing model, best for editing existing images, keep the prompt more descriptive on the edit, and preserve the original image",
+    "fal-ai/flux/krea/image-to-image": "FLUX Krea image-to-image model for style transfer and image modifications",
+    "fal-ai/flux/krea/redux": "High-performance FLUX Krea model for rapid image transformation and style transfers",
   },
   video: {
     "fal-ai/veo3/fast": "State of the art video generation model, best for creating videos from scratch, comes with audio",
+    "fal-ai/veo3/fast/image-to-video": "State of the art image-to-video generation model",
     "fal-ai/wan/v2.2-a14b/image-to-video": "State of the art video generation model with image input",
     "fal-ai/wan/v2.2-a14b/text-to-video": "State of the art video generation model",
   },
@@ -287,7 +292,11 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
   'fal-ai/flux-pro': 100, // Highest quality, slower
   'fal-ai/flux-realism': 92,
   'fal-ai/flux-kontext': 96, // Excellent at following complex prompts and context
+  'fal-ai/flux/krea': 94, // FLUX Krea for high-quality image generation
+  'fal-ai/flux/krea/image-to-image': 94, // FLUX Krea image-to-image editing
+  'fal-ai/flux/krea/redux': 95, // High-performance FLUX Krea for rapid transformations
   'fal-ai/imagen4/preview': 97, // Google's high-quality image generation with enhanced detail
+  'fal-ai/qwen-image': 90, // Advanced image generation with enhanced understanding
 
   // Other strong image models
   'fal-ai/stable-diffusion-v3-medium': 85,
@@ -295,6 +304,7 @@ const MODEL_QUALITY_SCORES: Record<string, number> = {
   'fal-ai/recraft-v3': 88,
 
   // Video generation
+  'fal-ai/veo3/fast/image-to-video': 88, // Image-to-video variant
   'fal-ai/runway-gen3/turbo/image-to-video': 90,
   'fal-ai/luma-dream-machine': 85,
   'fal-ai/kling-video/v1/standard/image-to-video': 80,
