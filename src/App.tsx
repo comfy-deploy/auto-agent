@@ -81,6 +81,19 @@ export function App({
     defaultValue: DEFAULT_TEXT_MODEL,
     history: 'push'
   });
+  React.useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const hasModelParam = params.has('model');
+        const stored = localStorage.getItem('selectedModel');
+        if (!hasModelParam && stored) {
+          setSelectedModel(stored);
+        }
+      }
+    } catch {}
+  }, []);
+
 
 
   // Check if current chat is read-only (example chat)
@@ -181,6 +194,14 @@ export function App({
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
           isReadOnly={isReadOnly}
+          React.useEffect(() => {
+            try {
+              if (selectedModel) {
+                localStorage.setItem('selectedModel', selectedModel);
+              }
+            } catch {}
+          }, [selectedModel]);
+
           selectedModel={selectedModel}
         />
       </div>

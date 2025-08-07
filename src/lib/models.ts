@@ -4,8 +4,8 @@ export type TextModel = {
 };
 
 export const TEXT_MODELS: TextModel[] = [
-  { id: "anthropic/claude-4-sonnet", label: "Claude 4 Sonnet" },
   { id: "openai/gpt-5", label: "GPT-5" },
+  { id: "anthropic/claude-4-sonnet", label: "Claude 4 Sonnet" },
 ];
 
-export const DEFAULT_TEXT_MODEL = TEXT_MODELS[0].id;
+export const DEFAULT_TEXT_MODEL = "openai/gpt-5";
