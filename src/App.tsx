@@ -89,6 +89,8 @@ export function App({
         const stored = localStorage.getItem('selectedModel');
         if (!hasModelParam && stored) {
           setSelectedModel(stored);
+        } else if (!hasModelParam && !stored) {
+          setSelectedModel(DEFAULT_TEXT_MODEL);
         }
       }
     } catch {}
