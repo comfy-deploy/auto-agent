@@ -116,6 +116,19 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
           </a>
         </Button>
 
+        {selectedModel && onChangeModel && (
+          <Select value={selectedModel} onValueChange={onChangeModel}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Model" />
+            </SelectTrigger>
+            <SelectContent>
+              {models.map(m => (
+                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         {canPublish && !isPublished && (
           <Button
             onClick={handlePublishToggle}
@@ -135,19 +148,6 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
           </Button>
         )}
 
-        {selectedModel && onChangeModel && (
-          <Select value={selectedModel} onValueChange={onChangeModel}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Model" />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map(m => (
-                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         <Button
           onClick={onNewChat}
           disabled={isCreatingChat}
@@ -161,4 +161,4 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
       </div>
     </header>
   );
-}  
+}    

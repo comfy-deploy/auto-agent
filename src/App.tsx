@@ -81,7 +81,7 @@ export function App({
     defaultValue: DEFAULT_TEXT_MODEL,
     history: 'push'
   });
-  React.useEffect(() => {
+  useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
@@ -143,6 +143,14 @@ export function App({
       setChatId(data.chatId);
     }
   });
+  
+  useEffect(() => {
+    try {
+      if (selectedModel) {
+        localStorage.setItem('selectedModel', selectedModel);
+      }
+    } catch {}
+  }, [selectedModel]);
 
   const handleNewChat = () => {
     createChat();
@@ -194,14 +202,6 @@ export function App({
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
           isReadOnly={isReadOnly}
-          React.useEffect(() => {
-            try {
-              if (selectedModel) {
-                localStorage.setItem('selectedModel', selectedModel);
-              }
-            } catch {}
-          }, [selectedModel]);
-
           selectedModel={selectedModel}
         />
       </div>
