@@ -9,6 +9,7 @@ import { Redis } from "@upstash/redis";
 // import { createResumableStreamContext } from 'resumable-stream/ioredis';
 import { READ_ONLY_EXAMPLE_CHAT_IDS } from './lib/constants';
 import { Ratelimit } from "@upstash/ratelimit";
+import { DEFAULT_TEXT_MODEL } from '@/lib/models';
 
 // TypeScript declaration for globalThis extension
 declare global {
@@ -1016,7 +1017,7 @@ export const crawlUrl = tool({
   },
 });
 
-export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) => tool({
+export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>, modelId?: string) => tool({
   description: "Use a fal.ai model to create an image or video, 3d models, or even more, based on the user's prompt",
   inputSchema: z.object({
     prompt: z.string(),
@@ -1031,7 +1032,7 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
     // console.log(`🔧 Using ${Object.keys(allTools).length} total tools (${Object.keys(defaultTools).length} default + ${Object.keys(searchedTools).length} searched)`);
 
     const stream = await streamText({
-      model: "anthropic/claude-4-sonnet",
+      model: modelId || DEFAULT_TEXT_MODEL,
       system: `You are a creative agent. The agent has decided to use the following tools to create the user's prompt. Some tools might require image_url, make sure to only use those when you have existing images`,
       prompt: prompt,
       maxRetries: 3,
@@ -1044,7 +1045,7 @@ export const falTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIData
   }
 });
 
-export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) => tool({
+export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>, modelId?: string) => tool({
   description: "Use predefined high-quality fal.ai models for image generation, video creation, and upscaling",
   inputSchema: z.object({
     prompt: z.string(),
@@ -1081,7 +1082,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
       : prompt;
 
     const stream = await streamText({
-      model: "anthropic/claude-4-sonnet",
+      model: modelId || DEFAULT_TEXT_MODEL,
       system: `You are a creative agent using high-quality predefined models.
       
       Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.${image_url ? ' An image URL has been provided for use with image-to-image/editing models.' : ''}`,
@@ -1102,12 +1103,12 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
   }
 });
 
-async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>, modelId?: string) {
   const defaultTools = await createDefaultModelTools(writer);
   const comfyDeployTools = await createComfyDeployTools(writer);
 
   return streamText({
-    model: "anthropic/claude-4-sonnet",
+    model: modelId || DEFAULT_TEXT_MODEL,
     system: `You are a creative agent with access to multiple AI tools:
 
     1. **default_models**: Use predefined high-quality fal.ai models (flux/dev, flux/schnell, runway-gen3, etc.) - faster and more reliable
@@ -1896,7 +1897,10 @@ async function startServer() {
 
             const body = await req.json();
             // console.log("body", body);
-            const { messages, id } = body;
+            const { messages, id, model } = body;
+            const url = new URL(req.url);
+            const urlModel = url.searchParams.get('model') || undefined;
+            const selectedModel = model || urlModel;
 
             // console.log("the chatId", id);
 
@@ -1945,7 +1949,7 @@ async function startServer() {
                 //   });
                 //   await new Promise(resolve => setTimeout(resolve, 1000));
                 // }
-                const stream = await createAIStream(messages, writer);
+                const stream = await createAIStream(messages, writer, selectedModel);
                 writer.merge(stream.toUIMessageStream())
 
                 // await stream.consumeStream();

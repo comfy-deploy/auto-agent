@@ -20,6 +20,7 @@ export function Chat(props: {
   onMessagesChange?: (hasMessages: boolean) => void;
   onLoadingChange?: (isLoading: boolean) => void;
   isReadOnly?: boolean;
+  selectedModel?: string;
 }) {
   const { setChatId } = props;
   const [prompt, setPrompt] = useQueryState("prompt", {
@@ -36,8 +37,9 @@ export function Chat(props: {
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
     id: props.chatId,
+    ...(props.selectedModel ? { api: `/api/chat?model=${encodeURIComponent(props.selectedModel)}` } : {}),
     // resume: props.chatId ? true : false,
-  });
+  } as any);
 
   // Notify parent component about message state
   useEffect(() => {

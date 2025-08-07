@@ -13,6 +13,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
 import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
+import { TEXT_MODELS, DEFAULT_TEXT_MODEL } from "@/lib/models";
 
 const queryClient = new QueryClient();
 
@@ -76,6 +77,26 @@ export function App({
     history: 'push' // Use pushState instead of replaceState for proper browser history
   });
 
+  const [selectedModel, setSelectedModel] = useQueryState("model", {
+    defaultValue: DEFAULT_TEXT_MODEL,
+    history: 'push'
+  });
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const hasModelParam = params.has('model');
+        const stored = localStorage.getItem('selectedModel');
+        if (!hasModelParam && stored) {
+          setSelectedModel(stored);
+        } else if (!hasModelParam && !stored) {
+          setSelectedModel(DEFAULT_TEXT_MODEL);
+        }
+      }
+    } catch {}
+  }, []);
+
+
 
   // Check if current chat is read-only (example chat)
   const isExampleReadOnly = isReadOnlyChat(chatId);
@@ -124,6 +145,14 @@ export function App({
       setChatId(data.chatId);
     }
   });
+  
+  useEffect(() => {
+    try {
+      if (selectedModel) {
+        localStorage.setItem('selectedModel', selectedModel);
+      }
+    } catch {}
+  }, [selectedModel]);
 
   const handleNewChat = () => {
     createChat();
@@ -153,7 +182,17 @@ export function App({
     <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
       {/* Always render header */}
       <div className="sticky top-0 z-20">
-        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
+        <Header 
+          onNewChat={handleNewChat} 
+          isCreatingChat={isCreatingChat} 
+          isListening={isLoading} 
+          isReadOnly={isReadOnly} 
+          chatId={chatId} 
+          isExampleChat={isExampleReadOnly}
+          selectedModel={selectedModel}
+          onChangeModel={setSelectedModel}
+          availableModels={TEXT_MODELS}
+        />
       </div>
 
       <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
@@ -165,6 +204,7 @@ export function App({
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
           isReadOnly={isReadOnly}
+          selectedModel={selectedModel}
         />
       </div>
     </div>
