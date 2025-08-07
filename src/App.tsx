@@ -13,6 +13,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
 import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
+import { TEXT_MODELS, DEFAULT_TEXT_MODEL } from "@/lib/models";
 
 const queryClient = new QueryClient();
 
@@ -74,6 +75,11 @@ export function App({
     defaultValue: serverChatId || defaultChatId,
     serverChatId, // Pass server chat ID to the hook
     history: 'push' // Use pushState instead of replaceState for proper browser history
+  });
+
+  const [selectedModel, setSelectedModel] = useQueryState("model", {
+    defaultValue: DEFAULT_TEXT_MODEL,
+    history: 'push'
   });
 
 
@@ -153,7 +159,17 @@ export function App({
     <div className={cn("w-screen flex flex-col", !hasMessages ? 'h-screen' : "min-h-screen h-full")}>
       {/* Always render header */}
       <div className="sticky top-0 z-20">
-        <Header onNewChat={handleNewChat} isCreatingChat={isCreatingChat} isListening={isLoading} isReadOnly={isReadOnly} chatId={chatId} isExampleChat={isExampleReadOnly} />
+        <Header 
+          onNewChat={handleNewChat} 
+          isCreatingChat={isCreatingChat} 
+          isListening={isLoading} 
+          isReadOnly={isReadOnly} 
+          chatId={chatId} 
+          isExampleChat={isExampleReadOnly}
+          selectedModel={selectedModel}
+          onChangeModel={setSelectedModel}
+          availableModels={TEXT_MODELS}
+        />
       </div>
 
       <div className={`flex-1 text-center relative z-10 transition-all duration-500 ease-out overflow-hidden ${hasMessages ? '' : 'pt-0'}`}>
@@ -165,6 +181,7 @@ export function App({
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
           isReadOnly={isReadOnly}
+          selectedModel={selectedModel}
         />
       </div>
     </div>
