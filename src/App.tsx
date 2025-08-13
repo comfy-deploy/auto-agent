@@ -13,7 +13,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from "@/components/ui/sonner"
 import { useChatIdFromPath } from "./hooks/useChatIdFromPath";
-import { TEXT_MODELS, DEFAULT_TEXT_MODEL } from "@/lib/models";
+import { DEFAULT_TEXT_MODEL } from "@/lib/models";
 
 const queryClient = new QueryClient();
 
@@ -77,24 +77,9 @@ export function App({
     history: 'push' // Use pushState instead of replaceState for proper browser history
   });
 
-  const [selectedModel, setSelectedModel] = useQueryState("model", {
-    defaultValue: DEFAULT_TEXT_MODEL,
-    history: 'push'
-  });
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        const hasModelParam = params.has('model');
-        const stored = localStorage.getItem('selectedModel');
-        if (!hasModelParam && stored) {
-          setSelectedModel(stored);
-        } else if (!hasModelParam && !stored) {
-          setSelectedModel(DEFAULT_TEXT_MODEL);
-        }
-      }
-    } catch {}
-  }, []);
+  // Using fixed model instead of user selection
+  const selectedModel = DEFAULT_TEXT_MODEL;
+
 
 
 
@@ -146,13 +131,7 @@ export function App({
     }
   });
   
-  useEffect(() => {
-    try {
-      if (selectedModel) {
-        localStorage.setItem('selectedModel', selectedModel);
-      }
-    } catch {}
-  }, [selectedModel]);
+
 
   const handleNewChat = () => {
     createChat();
@@ -189,9 +168,6 @@ export function App({
           isReadOnly={isReadOnly} 
           chatId={chatId} 
           isExampleChat={isExampleReadOnly}
-          selectedModel={selectedModel}
-          onChangeModel={setSelectedModel}
-          availableModels={TEXT_MODELS}
         />
       </div>
 
@@ -204,7 +180,6 @@ export function App({
           onMessagesChange={handleMessagesChange}
           onLoadingChange={handleLoadingChange}
           isReadOnly={isReadOnly}
-          selectedModel={selectedModel}
         />
       </div>
     </div>

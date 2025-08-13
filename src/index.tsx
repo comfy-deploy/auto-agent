@@ -1897,10 +1897,7 @@ async function startServer() {
 
             const body = await req.json();
             // console.log("body", body);
-            const { messages, id, model } = body;
-            const url = new URL(req.url);
-            const urlModel = url.searchParams.get('model') || undefined;
-            const selectedModel = model || urlModel;
+            const { messages, id } = body;
 
             // console.log("the chatId", id);
 
@@ -1949,7 +1946,7 @@ async function startServer() {
                 //   });
                 //   await new Promise(resolve => setTimeout(resolve, 1000));
                 // }
-                const stream = await createAIStream(messages, writer, selectedModel);
+                const stream = await createAIStream(messages, writer);
                 writer.merge(stream.toUIMessageStream())
 
                 // await stream.consumeStream();
