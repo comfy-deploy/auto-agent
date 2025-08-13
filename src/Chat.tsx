@@ -10,9 +10,10 @@ import { MediaItem } from "@/components/MediaItem";
 import { MediaGallery } from "@/components/MediaGallery";
 import { Logo } from "./components/ui/logo";
 import ReactMarkdown from "react-markdown";
+import { DEFAULT_TEXT_MODEL } from "@/lib/models";
 import { isReadOnlyChat } from "@/lib/constants";
-import { trackChatEvent } from "@/lib/analytics";
 
+import { trackChatEvent } from "@/lib/analytics";
 export function Chat(props: {
   initialMessages: UIMessage[];
   chatId: string;
@@ -20,7 +21,6 @@ export function Chat(props: {
   onMessagesChange?: (hasMessages: boolean) => void;
   onLoadingChange?: (isLoading: boolean) => void;
   isReadOnly?: boolean;
-  selectedModel?: string;
 }) {
   const { setChatId } = props;
   const [prompt, setPrompt] = useQueryState("prompt", {
@@ -37,7 +37,7 @@ export function Chat(props: {
   const { messages, sendMessage, status, resumeStream } = useChat({
     messages: props.initialMessages,
     id: props.chatId,
-    ...(props.selectedModel ? { api: `/api/chat?model=${encodeURIComponent(props.selectedModel)}` } : {}),
+    api: `/api/chat?model=${encodeURIComponent(DEFAULT_TEXT_MODEL)}`,
     // resume: props.chatId ? true : false,
   } as any);
 
