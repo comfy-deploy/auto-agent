@@ -166,7 +166,7 @@ function decrementActiveStreams(streamId: string) {
   globalThis.appState.activeStreams.delete(streamId);
   console.log(`📉 Active streams: ${globalThis.appState.activeStreams.size} (-${streamId})`);
 
-  releaseMCPClient();
+  // releaseMCPClient();
 
   // If shutting down and no more active streams, proceed with shutdown
   if (globalThis.appState.isShuttingDown && globalThis.appState.activeStreams.size === 0 && !globalThis.appState.shutdownInProgress) {
@@ -194,58 +194,58 @@ function hasActiveStream(streamId: string): boolean {
 }
 
 // MCP client management utilities
-async function getMCPClient() {
-  if (!globalThis.appState.mcpClient) {
-    try {
-      const transport = new Experimental_StdioMCPTransport({
-        command: 'bunx',
-        args: ['-y', 'comfydeploy-mcp'],
-        env: {
-          API_KEY: process.env.COMFY_DEPLOY_API_KEY
-        }
-      });
+// async function getMCPClient() {
+//   if (!globalThis.appState.mcpClient) {
+//     try {
+//       const transport = new Experimental_StdioMCPTransport({
+//         command: 'bunx',
+//         args: ['-y', 'comfydeploy-mcp'],
+//         env: {
+//           API_KEY: process.env.COMFY_DEPLOY_API_KEY
+//         }
+//       });
 
-      globalThis.appState.mcpClient = await experimental_createMCPClient({
-        transport,
-      });
-      
-      console.log('🎨 Created shared MCP client connection');
-    } catch (error) {
-      console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
-      return null;
-    }
-  }
-  
-  globalThis.appState.mcpClientRefCount++;
-  console.log(`📈 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
-  return globalThis.appState.mcpClient;
-}
+//       globalThis.appState.mcpClient = await experimental_createMCPClient({
+//         transport,
+//       });
 
-function releaseMCPClient() {
-  if (globalThis.appState.mcpClientRefCount > 0) {
-    globalThis.appState.mcpClientRefCount--;
-    console.log(`📉 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
-    
-    // Close client when no more references and shutting down
-    if (globalThis.appState.mcpClientRefCount === 0 && 
-        (globalThis.appState.isShuttingDown || globalThis.appState.activeStreams.size === 0)) {
-      closeMCPClient();
-    }
-  }
-}
+//       console.log('🎨 Created shared MCP client connection');
+//     } catch (error) {
+//       console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+//       return null;
+//     }
+//   }
 
-async function closeMCPClient() {
-  if (globalThis.appState.mcpClient) {
-    try {
-      await globalThis.appState.mcpClient.close();
-      console.log('🔌 Closed MCP client connection');
-    } catch (error) {
-      console.warn('⚠️ Error closing MCP client:', error);
-    }
-    globalThis.appState.mcpClient = null;
-    globalThis.appState.mcpClientRefCount = 0;
-  }
-}
+//   globalThis.appState.mcpClientRefCount++;
+//   console.log(`📈 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+//   return globalThis.appState.mcpClient;
+// }
+
+// function releaseMCPClient() {
+//   if (globalThis.appState.mcpClientRefCount > 0) {
+//     globalThis.appState.mcpClientRefCount--;
+//     console.log(`📉 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
+
+//     // Close client when no more references and shutting down
+//     if (globalThis.appState.mcpClientRefCount === 0 &&
+//         (globalThis.appState.isShuttingDown || globalThis.appState.activeStreams.size === 0)) {
+//       closeMCPClient();
+//     }
+//   }
+// }
+
+// async function closeMCPClient() {
+//   if (globalThis.appState.mcpClient) {
+//     try {
+//       await globalThis.appState.mcpClient.close();
+//       console.log('🔌 Closed MCP client connection');
+//     } catch (error) {
+//       console.warn('⚠️ Error closing MCP client:', error);
+//     }
+//     globalThis.appState.mcpClient = null;
+//     globalThis.appState.mcpClientRefCount = 0;
+//   }
+// }
 
 const defaultModels = {
   image: {
@@ -919,24 +919,24 @@ async function createDefaultModelTools(writer: UIMessageStreamWriter<UIMessage<u
     return {};
   }
 }
-async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
-  try {
-    const mcpClient = await getMCPClient();
-    if (!mcpClient) {
-      console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
-      return {};
-    }
+// async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
+//   try {
+//     const mcpClient = await getMCPClient();
+//     if (!mcpClient) {
+//       console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+//       return {};
+//     }
 
-    const mcpTools = await mcpClient.tools();
-    console.log(`🎨 Retrieved ${Object.keys(mcpTools).length} ComfyDeploy MCP tools from shared client`);
-    
-    return mcpTools;
-  } catch (error) {
-    console.warn('⚠️ Failed to get ComfyDeploy MCP tools:', error);
-    console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
-    return {};
-  }
-}
+//     const mcpTools = await mcpClient.tools();
+//     console.log(`🎨 Retrieved ${Object.keys(mcpTools).length} ComfyDeploy MCP tools from shared client`);
+
+//     return mcpTools;
+//   } catch (error) {
+//     console.warn('⚠️ Failed to get ComfyDeploy MCP tools:', error);
+//     console.log('🔄 ComfyDeploy MCP tools unavailable, continuing with other tools');
+//     return {};
+//   }
+// }
 
 
 
@@ -1073,7 +1073,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
     const stream = await streamText({
       model: "anthropic/claude-4-sonnet",
       system: `You are a creative agent using high-quality predefined models.
-      
+
       Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.${image_url ? ' An image URL has been provided for use with image-to-image/editing models.' : ''}`,
       prompt: fullPrompt,
       maxRetries: 3,
@@ -1094,7 +1094,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
 async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>) {
   const defaultTools = await createDefaultModelTools(writer);
-  const comfyDeployTools = await createComfyDeployTools(writer);
+  // const comfyDeployTools = await createComfyDeployTools(writer);
 
   return streamText({
     model: "anthropic/claude-4-sonnet",
@@ -1107,7 +1107,7 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
-    2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
+    2. For common tasks (image generation, video creation, upscaling), prefer **default_models**
     3. For advanced ComfyUI workflows, custom nodes, or specialized image processing, use **comfydeploy_tools**
     4. If unclear about the request, use **webSearch** first
     5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
@@ -1127,7 +1127,7 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
       webSearch,
       crawlUrl,
       ...defaultTools,
-      ...comfyDeployTools,
+      // ...comfyDeployTools,
     },
   });
 
@@ -2533,7 +2533,7 @@ function setupGracefulShutdown() {
       await server.stop();
     }
 
-    await closeMCPClient();
+    // await closeMCPClient();
 
     console.log('✅ Graceful shutdown complete');
     process.exit(0);
