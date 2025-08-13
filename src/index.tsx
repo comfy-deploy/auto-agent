@@ -198,25 +198,25 @@ function hasActiveStream(streamId: string): boolean {
 async function getMCPClient() {
   if (!globalThis.appState.mcpClient) {
     try {
-      const transport = new Experimental_StdioMCPTransport({
-        command: 'bunx',
-        args: ['-y', 'comfydeploy-mcp'],
-        env: {
-          API_KEY: process.env.COMFY_DEPLOY_API_KEY
-        }
-      });
+      // const transport = new Experimental_StdioMCPTransport({
+      //   command: 'bunx',
+      //   args: ['-y', 'comfydeploy-mcp'],
+      //   env: {
+      //     API_KEY: process.env.COMFY_DEPLOY_API_KEY
+      //   }
+      // });
 
-      globalThis.appState.mcpClient = await experimental_createMCPClient({
-        transport,
-      });
-      
-      console.log('🎨 Created shared MCP client connection');
+      // globalThis.appState.mcpClient = await experimental_createMCPClient({
+      //   transport,
+      // });
+
+      // console.log('🎨 Created shared MCP client connection');
     } catch (error) {
-      console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
+      // console.warn('⚠️ Failed to connect to ComfyDeploy MCP server:', error);
       return null;
     }
   }
-  
+
   globalThis.appState.mcpClientRefCount++;
   console.log(`📈 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
   return globalThis.appState.mcpClient;
@@ -226,9 +226,9 @@ function releaseMCPClient() {
   if (globalThis.appState.mcpClientRefCount > 0) {
     globalThis.appState.mcpClientRefCount--;
     console.log(`📉 MCP client ref count: ${globalThis.appState.mcpClientRefCount}`);
-    
+
     // Close client when no more references and shutting down
-    if (globalThis.appState.mcpClientRefCount === 0 && 
+    if (globalThis.appState.mcpClientRefCount === 0 &&
         (globalThis.appState.isShuttingDown || globalThis.appState.activeStreams.size === 0)) {
       closeMCPClient();
     }
@@ -940,7 +940,7 @@ async function createComfyDeployTools(writer: UIMessageStreamWriter<UIMessage<un
 
     const mcpTools = await mcpClient.tools();
     console.log(`🎨 Retrieved ${Object.keys(mcpTools).length} ComfyDeploy MCP tools from shared client`);
-    
+
     return mcpTools;
   } catch (error) {
     console.warn('⚠️ Failed to get ComfyDeploy MCP tools:', error);
@@ -1084,7 +1084,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
     const stream = await streamText({
       model: modelId || DEFAULT_TEXT_MODEL,
       system: `You are a creative agent using high-quality predefined models.
-      
+
       Choose the most appropriate model for the user's request. Some tools might require image_url, make sure to only use those when you have existing images.${image_url ? ' An image URL has been provided for use with image-to-image/editing models.' : ''}`,
       prompt: fullPrompt,
       maxRetries: 3,
@@ -1118,7 +1118,7 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
 
     **Guidelines:**
     1. Help the user plan their creative goal until you understand it clearly, use web search to find more information about the user's request
-    2. For common tasks (image generation, video creation, upscaling), prefer **default_models** 
+    2. For common tasks (image generation, video creation, upscaling), prefer **default_models**
     3. For advanced ComfyUI workflows, custom nodes, or specialized image processing, use **comfydeploy_tools**
     4. If unclear about the request, use **webSearch** first
     5. When users provide specific URLs or you need to analyze content from known links, use **crawlUrl**
