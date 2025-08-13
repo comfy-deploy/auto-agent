@@ -5,8 +5,6 @@ import { cn } from "@/lib/utils";
 import logo from "@/components/icon.svg";
 import { Logo } from "./logo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
-import { TEXT_MODELS, type TextModel } from "@/lib/models";
 
 interface HeaderProps {
   onNewChat?: () => void;
@@ -16,12 +14,9 @@ interface HeaderProps {
   className?: string;
   chatId?: string;
   isExampleChat?: boolean;
-  selectedModel?: string;
-  onChangeModel?: (model: string) => void;
-  availableModels?: TextModel[];
 }
 
-export function Header({ onNewChat, isCreatingChat, isListening = false, isReadOnly = false, className, chatId, isExampleChat = false, selectedModel, onChangeModel, availableModels }: HeaderProps) {
+export function Header({ onNewChat, isCreatingChat, isListening = false, isReadOnly = false, className, chatId, isExampleChat = false }: HeaderProps) {
   const queryClient = useQueryClient();
 
   // Query to get publish status
@@ -61,8 +56,6 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
     const action = isPublished ? 'unpublish' : 'publish';
     publishMutation.mutate(action);
   };
-
-  const models = availableModels ?? TEXT_MODELS;
 
   return (
     <header className={cn(
@@ -116,19 +109,6 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
           </a>
         </Button>
 
-        {selectedModel && onChangeModel && (
-          <Select value={selectedModel} onValueChange={onChangeModel}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Model" />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map(m => (
-                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         {canPublish && !isPublished && (
           <Button
             onClick={handlePublishToggle}
@@ -161,4 +141,4 @@ export function Header({ onNewChat, isCreatingChat, isListening = false, isReadO
       </div>
     </header>
   );
-}    
+} 
