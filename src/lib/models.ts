@@ -8,4 +8,4 @@ export const TEXT_MODELS: TextModel[] = [
   { id: "anthropic/claude-4-sonnet", label: "Claude 4 Sonnet" },
 ];
 
-export const DEFAULT_TEXT_MODEL = "openai/gpt-5";
+export const DEFAULT_TEXT_MODEL = "anthropic/claude-4-sonnet";

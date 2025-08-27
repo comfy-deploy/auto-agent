@@ -1,40 +1,48 @@
 import { useEffect, useState } from "react";
 
 /**
- * Custom hook to handle chatId from URL path or query parameters (backward compatible)
- * Works with URLs like /chat/<chatId> (preferred) and ?chatId=<chatId> (fallback)
+ * Custom hook to handle chatId from URL path and model from query parameters
+ * Works with URLs like /chat/<chatId>?model=<model>
+ * Also supports backward compatibility with ?chatId=<chatId> format
  * 
- * This is a drop-in replacement for useQueryState('chatId') but prioritizes URL path
+ * This manages both chat ID and model as a cohesive unit
  */
 export function useChatIdFromPath(options: { 
   defaultValue?: string; 
   serverChatId?: string; // Server-provided chat ID for SSR
+  defaultModel?: string; // Default model to use
   history?: 'push' | 'replace';
   autoMigrateFromQuery?: boolean; // Auto-redirect from ?chatId= to /chat/ format
 } = {}) {
-  const { defaultValue = '', serverChatId, history = 'push', autoMigrateFromQuery = false } = options;
+  const { defaultValue = '', serverChatId, defaultModel = '', history = 'push', autoMigrateFromQuery = false } = options;
   
-  const extractChatIdFromUrl = () => {
+  const extractFromUrl = () => {
     // Check if we're in a browser environment
     if (typeof window === 'undefined') {
-      return ''; // Return empty string during SSR, server will provide the value
+      return { chatId: '', model: '' }; // Return empty during SSR
     }
     
-    // First try to get from URL path (/chat/<chatId>)
+    // First try to get chatId from URL path (/chat/<chatId>)
     const path = window.location.pathname;
     const pathMatch = path.match(/^\/chat\/([^\/]+)$/);
+    let chatId = '';
+    
     if (pathMatch) {
-      return pathMatch[1];
+      chatId = pathMatch[1];
+    } else {
+      // Fallback to query parameter (?chatId=<chatId>) for backward compatibility
+      const params = new URLSearchParams(window.location.search);
+      const queryParamChatId = params.get('chatId');
+      if (queryParamChatId) {
+        chatId = queryParamChatId;
+      }
     }
     
-    // Fallback to query parameter (?chatId=<chatId>) for backward compatibility
+    // Get model from query parameter
     const params = new URLSearchParams(window.location.search);
-    const queryParamChatId = params.get('chatId');
-    if (queryParamChatId) {
-      return queryParamChatId;
-    }
+    const model = params.get('model') || '';
     
-    return '';
+    return { chatId, model };
   };
 
   const [chatId, setChatIdState] = useState(() => {
@@ -44,8 +52,19 @@ export function useChatIdFromPath(options: {
     }
     
     // On client, extract from URL
-    const urlChatId = extractChatIdFromUrl();
+    const { chatId: urlChatId } = extractFromUrl();
     return urlChatId || serverChatId || defaultValue;
+  });
+
+  const [model, setModelState] = useState(() => {
+    // During SSR, use default model
+    if (typeof window === 'undefined') {
+      return defaultModel;
+    }
+    
+    // On client, extract from URL
+    const { model: urlModel } = extractFromUrl();
+    return urlModel || defaultModel;
   });
 
   // Auto-migrate from query parameter to path format (optional)
@@ -55,16 +74,21 @@ export function useChatIdFromPath(options: {
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     const queryParamChatId = params.get('chatId');
+    const queryParamModel = params.get('model');
     
     // If we're not on /chat/:id path but have chatId query param, migrate
     if (queryParamChatId && !path.match(/^\/chat\/[^\/]+$/)) {
-      const newUrl = `/chat/${queryParamChatId}`;
+      const modelParam = queryParamModel ? `?model=${encodeURIComponent(queryParamModel)}` : '';
+      const newUrl = `/chat/${queryParamChatId}${modelParam}`;
       if (history === 'push') {
         window.history.pushState({}, '', newUrl);
       } else {
         window.history.replaceState({}, '', newUrl);
       }
       setChatIdState(queryParamChatId);
+      if (queryParamModel) {
+        setModelState(queryParamModel);
+      }
     }
   }, [autoMigrateFromQuery, history]);
 
@@ -72,35 +96,45 @@ export function useChatIdFromPath(options: {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    // On first mount, check if URL chatId differs from current state
-    const urlChatId = extractChatIdFromUrl();
+    // On first mount, check if URL differs from current state
+    const { chatId: urlChatId, model: urlModel } = extractFromUrl();
     const finalChatId = urlChatId || serverChatId || defaultValue;
+    const finalModel = urlModel || defaultModel;
     
     if (finalChatId !== chatId) {
       setChatIdState(finalChatId);
     }
-  }, [serverChatId, defaultValue]); // Run when server chat ID or default changes
+    if (finalModel !== model) {
+      setModelState(finalModel);
+    }
+  }, [serverChatId, defaultValue, defaultModel]); // Run when server values or defaults change
 
   // Listen for browser navigation (back/forward buttons)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     const handlePopState = () => {
-      const urlChatId = extractChatIdFromUrl();
+      const { chatId: urlChatId, model: urlModel } = extractFromUrl();
       setChatIdState(urlChatId || serverChatId || defaultValue);
+      setModelState(urlModel || defaultModel);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [defaultValue, serverChatId]);
+  }, [defaultValue, serverChatId, defaultModel]);
 
-  const setChatId = (newChatId: string) => {
+  const setChatId = (newChatId: string, newModel?: string) => {
     setChatIdState(newChatId);
+    if (newModel !== undefined) {
+      setModelState(newModel);
+    }
     
     // Only update browser history on the client side
     if (typeof window !== 'undefined') {
       if (newChatId) {
-        const newUrl = `/chat/${newChatId}`;
+        const modelToUse = newModel !== undefined ? newModel : model;
+        const modelParam = modelToUse ? `?model=${encodeURIComponent(modelToUse)}` : '';
+        const newUrl = `/chat/${newChatId}${modelParam}`;
         if (history === 'push') {
           window.history.pushState({}, '', newUrl);
         } else {
@@ -117,5 +151,20 @@ export function useChatIdFromPath(options: {
     }
   };
 
-  return [chatId, setChatId] as const;
+  const setModel = (newModel: string) => {
+    setModelState(newModel);
+    
+    // Only update browser history on the client side
+    if (typeof window !== 'undefined' && chatId) {
+      const modelParam = newModel ? `?model=${encodeURIComponent(newModel)}` : '';
+      const newUrl = `/chat/${chatId}${modelParam}`;
+      if (history === 'push') {
+        window.history.pushState({}, '', newUrl);
+      } else {
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  };
+
+  return [chatId, setChatId, model, setModel] as const;
 }

@@ -1,7 +1,7 @@
 import "./index.css";
 import { Chat } from "./Chat";
 import { Header } from "./components/ui/header";
-import { useQueryState } from 'nuqs'
+
 import { useEffect, useState } from "react";
 import type { UIMessage } from "ai";
 import { useQuery, useMutation, QueryClient, hydrate } from "@tanstack/react-query";
@@ -71,30 +71,26 @@ export function App({
   serverMessages?: any[];
   defaultChatId?: string;
 }) {
-  const [chatId, setChatId] = useChatIdFromPath({
+  const [chatId, setChatId, selectedModel, setSelectedModel] = useChatIdFromPath({
     defaultValue: serverChatId || defaultChatId,
     serverChatId, // Pass server chat ID to the hook
+    defaultModel: DEFAULT_TEXT_MODEL,
     history: 'push' // Use pushState instead of replaceState for proper browser history
   });
 
-  const [selectedModel, setSelectedModel] = useQueryState("model", {
-    defaultValue: DEFAULT_TEXT_MODEL,
-    history: 'push'
-  });
+  // Load stored model from localStorage if no URL parameter
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const hasModelParam = params.has('model');
         const stored = localStorage.getItem('selectedModel');
-        if (!hasModelParam && stored) {
+        if (!hasModelParam && stored && !selectedModel) {
           setSelectedModel(stored);
-        } else if (!hasModelParam && !stored) {
-          setSelectedModel(DEFAULT_TEXT_MODEL);
         }
       }
     } catch {}
-  }, []);
+  }, [selectedModel, setSelectedModel]);
 
 
 
@@ -121,7 +117,7 @@ export function App({
     queryFn: () => fetch(`/api/chat?chatId=${chatId}`).then(res => res.json()),
     enabled: !!chatId,
     initialData: serverMessages.length > 0 ? serverMessages : undefined, // Use server data as initial data
-  })
+  });
 
   const [hasMessages, setHasMessages] = useState(messages?.length > 0);
   const [isLoading, setIsLoading] = useState(false);
@@ -137,12 +133,18 @@ export function App({
     mutationFn: async () => {
       const response = await fetch('/api/chat/new', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+        }),
       });
       return response.json();
     },
     onSuccess: (data) => {
       trackChatEvent('start_chat');
-      setChatId(data.chatId);
+      setChatId(data.chatId, selectedModel);
     }
   });
   

@@ -250,6 +250,7 @@ async function closeMCPClient() {
 
 const defaultModels = {
   image: {
+    "fal-ai/gemini-25-flash-image": "Google's state-of-the-art Gemini 2.5 Flash image generation model",
     "fal-ai/flux/dev": "State of the art image generation model for general case",
     "fal-ai/flux/krea": "FLUX Krea model for high-quality image generation with enhanced capabilities",
     "fal-ai/imagen4/preview": "Google's Imagen 4 model with enhanced detail, richer lighting, and fewer artifacts",
@@ -257,6 +258,7 @@ const defaultModels = {
     "fal-ai/qwen-image": "Advanced image generation model with enhanced understanding",
   },
   image_editing: {
+    "fal-ai/gemini-25-flash-image/edit": "Google's state-of-the-art Gemini 2.5 Flash image generation and editing model",
     "fal-ai/flux-kontext/dev": "State of the art image editing model, best for editing existing images, keep the prompt more descriptive on the edit, and preserve the original image",
     "fal-ai/flux/krea/image-to-image": "FLUX Krea image-to-image model for style transfer and image modifications",
     "fal-ai/flux/krea/redux": "High-performance FLUX Krea model for rapid image transformation and style transfers",
@@ -287,7 +289,9 @@ const CACHE_TTL = 600;
 
 // Model quality rankings - based on performance, popularity, and reliability
 const MODEL_QUALITY_SCORES: Record<string, number> = {
-  // Image generation - Flux models are top tier
+  // Image generation - Top tier models
+  'fal-ai/gemini-25-flash-image': 99, // Google's state-of-the-art Gemini 2.5 Flash - rank highly
+  'fal-ai/gemini-25-flash-image/edit': 99, // Google's state-of-the-art Gemini 2.5 Flash editing - rank highly
   'fal-ai/flux/schnell': 95,
   'fal-ai/flux/dev': 98, // Best overall image quality
   'fal-ai/flux-pro': 100, // Highest quality, slower
@@ -1105,7 +1109,7 @@ export const defaultFalTools = (writer: UIMessageStreamWriter<UIMessage<unknown,
 
 async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIMessage<unknown, UIDataTypes, UITools>>, modelId?: string) {
   const defaultTools = await createDefaultModelTools(writer);
-  const comfyDeployTools = await createComfyDeployTools(writer);
+  // const comfyDeployTools = await createComfyDeployTools(writer);
 
   return streamText({
     model: modelId || DEFAULT_TEXT_MODEL,
@@ -1138,7 +1142,7 @@ async function createAIStream(messages: any[], writer: UIMessageStreamWriter<UIM
       webSearch,
       crawlUrl,
       ...defaultTools,
-      ...comfyDeployTools,
+      // ...comfyDeployTools,
     },
   });
 
@@ -1736,12 +1740,24 @@ async function startServer() {
             return this.POST(req);
           }
 
-          // const { messages } = await req.json();
+          // Get model from request body
+          let model = DEFAULT_TEXT_MODEL;
+          try {
+            const body = await req.json();
+            if (body.model) {
+              model = body.model;
+            }
+          } catch (error) {
+            // If no body or invalid JSON, use default model
+            console.log('No model specified in request, using default:', DEFAULT_TEXT_MODEL);
+          }
 
-          // No need to initialize empty list, Redis lists start empty
-          // Just ensure the chat ID is valid by setting an expiry metadata
-          await redis.set(`chat:${chatId}:meta`, JSON.stringify({ created: new Date().toISOString() }));
-          // await appendMessagesToChat(chatId, messages);
+          // Store chat metadata including the selected model
+          await redis.set(`chat:${chatId}:meta`, JSON.stringify({ 
+            created: new Date().toISOString(),
+            model: model
+          }));
+          
           return Response.json({ chatId });
         }
       },
@@ -1900,7 +1916,32 @@ async function startServer() {
             const { messages, id, model } = body;
             const url = new URL(req.url);
             const urlModel = url.searchParams.get('model') || undefined;
-            const selectedModel = model || urlModel;
+            
+            // Priority order: URL param > request body > stored metadata > default
+            let selectedModel = urlModel || model;
+            
+            // If no model specified and we have a chat ID, try to get the stored model (backward compatibility)
+            if (!selectedModel && id) {
+              try {
+                const chatMeta = await redis.get(`chat:${id}:meta`);
+                if (chatMeta) {
+                  const meta = typeof chatMeta === 'string' ? JSON.parse(chatMeta) : chatMeta;
+                  selectedModel = meta.model;
+                  if (selectedModel) {
+                    console.log(`📋 Using stored model for chat ${id}: ${selectedModel}`);
+                  }
+                }
+              } catch (error) {
+                console.warn(`⚠️ Failed to load chat metadata for ${id}:`, error);
+              }
+            }
+            
+            // Fallback to default model if still not set
+            selectedModel = selectedModel || DEFAULT_TEXT_MODEL;
+            
+            if (urlModel) {
+              console.log(`🌐 Using URL model parameter: ${selectedModel}`);
+            }
 
             // console.log("the chatId", id);
 
@@ -2037,6 +2078,40 @@ async function startServer() {
             );
           }
         },
+      },
+
+      "/api/chat/:chatId/metadata": {
+        async GET(req) {
+          try {
+            const url = new URL(req.url);
+            const chatId = url.pathname.split('/')[3]; // Extract chatId from path
+
+            if (!chatId) {
+              return Response.json(
+                { error: "Chat ID is required" },
+                { status: 400 }
+              );
+            }
+
+            // Get chat metadata
+            const chatMeta = await redis.get(`chat:${chatId}:meta`);
+            if (!chatMeta) {
+              return Response.json(
+                { error: "Chat not found" },
+                { status: 404 }
+              );
+            }
+
+            const meta = typeof chatMeta === 'string' ? JSON.parse(chatMeta) : chatMeta;
+            return Response.json(meta);
+          } catch (error) {
+            console.error('Error retrieving chat metadata:', error);
+            return Response.json(
+              { error: "Failed to retrieve chat metadata" },
+              { status: 500 }
+            );
+          }
+        }
       },
 
       "/api/chat/:chatId/stream": {

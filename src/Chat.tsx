@@ -16,7 +16,7 @@ import { trackChatEvent } from "@/lib/analytics";
 export function Chat(props: {
   initialMessages: UIMessage[];
   chatId: string;
-  setChatId: (chatId: string) => void;
+  setChatId: (chatId: string, model?: string) => void;
   onMessagesChange?: (hasMessages: boolean) => void;
   onLoadingChange?: (isLoading: boolean) => void;
   isReadOnly?: boolean;
@@ -63,12 +63,18 @@ export function Chat(props: {
     mutationFn: async () => {
       const response = await fetch('/api/chat/new', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: props.selectedModel,
+        }),
       });
       return response.json();
     },
     onSuccess: (data) => {
       trackChatEvent('start_chat');
-      setChatId(data.chatId);
+      props.setChatId(data.chatId, props.selectedModel);
     }
   });
 
