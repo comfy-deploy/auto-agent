@@ -1928,34 +1928,38 @@ async function startServer() {
               );
             }
 
-            // Rate limiting check
-            const clientIP = getClientIP(req);
-            console.log(`🔒 Checking rate limit for IP: ${clientIP}`);
+            // Rate limiting check (can be disabled with DISABLE_RATE_LIMITING env var)
+            if (!process.env.DISABLE_RATE_LIMITING) {
+              const clientIP = getClientIP(req);
+              console.log(`🔒 Checking rate limit for IP: ${clientIP}`);
 
-            const { success, limit, remaining, reset } = await ratelimit.limit(clientIP);
+              const { success, limit, remaining, reset } = await ratelimit.limit(clientIP);
 
-            if (!success) {
-              console.log(`🚫 Rate limit exceeded for IP: ${clientIP}`);
-              return Response.json(
-                {
-                  error: "Daily message limit exceeded. You can send up to 10 messages per day.",
-                  limit,
-                  remaining,
-                  resetTime: new Date(reset).toISOString()
-                },
-                {
-                  status: 429,
-                  headers: {
-                    ...corsHeaders,
-                    'X-RateLimit-Limit': limit.toString(),
-                    'X-RateLimit-Remaining': remaining.toString(),
-                    'X-RateLimit-Reset': reset.toString()
+              if (!success) {
+                console.log(`🚫 Rate limit exceeded for IP: ${clientIP}`);
+                return Response.json(
+                  {
+                    error: "Daily message limit exceeded. You can send up to 10 messages per day.",
+                    limit,
+                    remaining,
+                    resetTime: new Date(reset).toISOString()
+                  },
+                  {
+                    status: 429,
+                    headers: {
+                      ...corsHeaders,
+                      'X-RateLimit-Limit': limit.toString(),
+                      'X-RateLimit-Remaining': remaining.toString(),
+                      'X-RateLimit-Reset': reset.toString()
+                    }
                   }
-                }
-              );
-            }
+                );
+              }
 
-            console.log(`✅ Rate limit check passed for IP: ${clientIP} (${remaining}/${limit} remaining)`);
+              console.log(`✅ Rate limit check passed for IP: ${clientIP} (${remaining}/${limit} remaining)`);
+            } else {
+              console.log(`⚠️ Rate limiting is DISABLED via DISABLE_RATE_LIMITING environment variable`);
+            }
 
             const body = await req.json();
             // console.log("body", body);
