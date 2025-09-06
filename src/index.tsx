@@ -1611,6 +1611,14 @@ async function startServer() {
   globalThis.appState.isShuttingDown = false;
   globalThis.appState.shutdownInProgress = false;
 
+  // CORS configuration
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*', // Allow all origins - adjust as needed for production
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Origin, X-Requested-With',
+    'Access-Control-Max-Age': '86400', // 24 hours
+  };
+
   server = serve({
     idleTimeout: 200,
     routes: {
@@ -1715,6 +1723,13 @@ async function startServer() {
 
       // Add health check endpoint
       "/api/health": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async GET() {
           return Response.json({
             status: globalThis.appState.isShuttingDown ? 'shutting_down' : 'healthy',
@@ -1726,11 +1741,20 @@ async function startServer() {
               dailyLimit: 10,
               windowSize: "1 day"
             }
+          }, {
+            headers: corsHeaders
           });
         }
       },
 
       "/api/chat/new": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async POST(req) {
           const chatId = generateId(); // generate a unique chat ID
 
@@ -1758,11 +1782,20 @@ async function startServer() {
             model: model
           }));
           
-          return Response.json({ chatId });
+          return Response.json({ chatId }, {
+            headers: corsHeaders
+          });
         }
       },
 
       "/api/chat/examples": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async GET() {
           try {
             const examples = await Promise.all(
@@ -1852,15 +1885,25 @@ async function startServer() {
             // Filter out null results (chats that don't exist)
             const validExamples = examples.filter(example => example !== null);
 
-            return Response.json(validExamples);
+            return Response.json(validExamples, {
+              headers: corsHeaders
+            });
           } catch (error) {
             console.error('Error fetching example chats:', error);
-            return Response.json([]);
+            return Response.json([], {
+              headers: corsHeaders
+            });
           }
         }
       },
 
       "/api/chat": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
 
         async GET(req) {
           const { searchParams } = new URL(req.url);
@@ -1869,7 +1912,9 @@ async function startServer() {
           console.log("chatId", chatId);
 
           if (chatId) {
-            return Response.json(await loadChat(chatId));
+            return Response.json(await loadChat(chatId), {
+              headers: corsHeaders
+            });
           }
         },
 
@@ -1879,7 +1924,7 @@ async function startServer() {
             if (globalThis.appState.isShuttingDown) {
               return Response.json(
                 { error: "Server is shutting down" },
-                { status: 503 }
+                { status: 503, headers: corsHeaders }
               );
             }
 
@@ -1901,6 +1946,7 @@ async function startServer() {
                 {
                   status: 429,
                   headers: {
+                    ...corsHeaders,
                     'X-RateLimit-Limit': limit.toString(),
                     'X-RateLimit-Remaining': remaining.toString(),
                     'X-RateLimit-Reset': reset.toString()
@@ -1948,7 +1994,7 @@ async function startServer() {
             if (!messages) {
               return Response.json(
                 { error: "Messages is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2062,7 +2108,10 @@ async function startServer() {
               }
             })();
 
-            return createUIMessageStreamResponse({ stream: streamForResponse })
+            return createUIMessageStreamResponse({ 
+              stream: streamForResponse,
+              headers: corsHeaders
+            })
 
             // const resumableStream = await streamContext.resumableStream(
             //   streamId,
@@ -2074,13 +2123,20 @@ async function startServer() {
             console.error('Agent error:', error);
             return Response.json(
               { error: "Failed to process request" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         },
       },
 
       "/api/chat/:chatId/metadata": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async GET(req) {
           try {
             const url = new URL(req.url);
@@ -2089,7 +2145,7 @@ async function startServer() {
             if (!chatId) {
               return Response.json(
                 { error: "Chat ID is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2098,23 +2154,32 @@ async function startServer() {
             if (!chatMeta) {
               return Response.json(
                 { error: "Chat not found" },
-                { status: 404 }
+                { status: 404, headers: corsHeaders }
               );
             }
 
             const meta = typeof chatMeta === 'string' ? JSON.parse(chatMeta) : chatMeta;
-            return Response.json(meta);
+            return Response.json(meta, {
+              headers: corsHeaders
+            });
           } catch (error) {
             console.error('Error retrieving chat metadata:', error);
             return Response.json(
               { error: "Failed to retrieve chat metadata" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
       },
 
       "/api/chat/:chatId/stream": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async GET(req) {
           try {
             const url = new URL(req.url);
@@ -2125,7 +2190,7 @@ async function startServer() {
             if (!streamId) {
               return Response.json(
                 { error: "Stream does not exist" },
-                { status: 404 }
+                { status: 404, headers: corsHeaders }
               )
             }
 
@@ -2139,7 +2204,7 @@ async function startServer() {
             if (!keyExists) {
               return Response.json(
                 { error: "Stream does not exist" },
-                { status: 404 }
+                { status: 404, headers: corsHeaders }
               )
             }
 
@@ -2246,6 +2311,7 @@ async function startServer() {
               }),
               {
                 headers: {
+                  ...corsHeaders,
                   "Content-Type": "text/event-stream",
                   "Cache-Control": "no-cache, no-transform",
                   Connection: "keep-alive",
@@ -2258,13 +2324,20 @@ async function startServer() {
             console.error('Error in stream route:', error);
             return Response.json(
               { error: "Failed to process request" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
       },
 
       "/api/chat/:chatId/publish": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async POST(req) {
           try {
             const url = new URL(req.url);
@@ -2273,7 +2346,7 @@ async function startServer() {
             if (!chatId) {
               return Response.json(
                 { error: "Chat ID is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2282,7 +2355,7 @@ async function startServer() {
             if (!chatExists) {
               return Response.json(
                 { error: "Chat not found" },
-                { status: 404 }
+                { status: 404, headers: corsHeaders }
               );
             }
 
@@ -2321,18 +2394,27 @@ async function startServer() {
               chatId,
               published: true,
               metadata: aiGeneratedMetadata
+            }, {
+              headers: corsHeaders
             });
           } catch (error) {
             console.error('Error publishing chat:', error);
             return Response.json(
               { error: "Failed to publish chat" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
       },
 
       "/api/chat/:chatId/unpublish": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async POST(req) {
           try {
             const url = new URL(req.url);
@@ -2341,7 +2423,7 @@ async function startServer() {
             if (!chatId) {
               return Response.json(
                 { error: "Chat ID is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2358,18 +2440,27 @@ async function startServer() {
               success: true,
               chatId,
               published: false
+            }, {
+              headers: corsHeaders
             });
           } catch (error) {
             console.error('Error unpublishing chat:', error);
             return Response.json(
               { error: "Failed to unpublish chat" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
       },
 
       "/api/chat/:chatId/regenerate-metadata": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async POST(req) {
           try {
             const url = new URL(req.url);
@@ -2378,7 +2469,7 @@ async function startServer() {
             if (!chatId) {
               return Response.json(
                 { error: "Chat ID is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2389,14 +2480,14 @@ async function startServer() {
             if (!chatExists) {
               return Response.json(
                 { error: "Chat not found" },
-                { status: 404 }
+                { status: 404, headers: corsHeaders }
               );
             }
 
             if (!isPublished) {
               return Response.json(
                 { error: "Chat is not published" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2426,18 +2517,27 @@ async function startServer() {
               chatId,
               metadata: aiGeneratedMetadata,
               regenerated: true
+            }, {
+              headers: corsHeaders
             });
           } catch (error) {
             console.error('Error regenerating metadata:', error);
             return Response.json(
               { error: "Failed to regenerate metadata" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
       },
 
       "/api/chat/:chatId/published": {
+        async OPTIONS() {
+          return new Response(null, {
+            status: 200,
+            headers: corsHeaders
+          });
+        },
+
         async GET(req) {
           try {
             const url = new URL(req.url);
@@ -2446,7 +2546,7 @@ async function startServer() {
             if (!chatId) {
               return Response.json(
                 { error: "Chat ID is required" },
-                { status: 400 }
+                { status: 400, headers: corsHeaders }
               );
             }
 
@@ -2472,12 +2572,14 @@ async function startServer() {
               chatId,
               published: isPublished,
               publishedAt
+            }, {
+              headers: corsHeaders
             });
           } catch (error) {
             console.error('Error checking publish status:', error);
             return Response.json(
               { error: "Failed to check publish status" },
-              { status: 500 }
+              { status: 500, headers: corsHeaders }
             );
           }
         }
